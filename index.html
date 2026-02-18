@@ -240,7 +240,7 @@
         </div>
     </div>
 
-  <script type="module">
+ <script type="module">
 import {
   db,
   auth,
@@ -260,7 +260,6 @@ window.currentUser = null;
 const mainApp = document.querySelector('main');
 if(mainApp) mainApp.classList.add('hidden');
 
-// Listen for auth state changes
 listenAuth(async (user) => {
   if(user){
     window.currentUser = user;
@@ -285,48 +284,18 @@ listenAuth(async (user) => {
   }
 });
 
-// Handle Register
+// --- LOGIN / REGISTER HANDLERS ---
 document.getElementById('registerBtn').onclick = async () => {
-  const email = document.getElementById('authEmail').value.trim();
-  const password = document.getElementById('authPassword').value.trim();
-
-  if(!email || !password){
-    alert("Please enter both email and password.");
-    return;
-  }
-
-  if(password.length < 6){
-    alert("Password must be at least 6 characters.");
-    return;
-  }
-
-  try {
-    await registerUser(email, password);
-    alert("Account created successfully! You are now logged in.");
-  } catch (error) {
-    console.error("Register error:", error.code, error.message);
-    alert(`Registration failed: ${error.message}`);
-  }
+  const email = document.getElementById('authEmail').value;
+  const pass = document.getElementById('authPassword').value;
+  try { await registerUser(email, pass); } 
+  catch(e){ alert(e.message); }  // <--- replace this line
 };
-
-// Handle Login
-document.getElementById('authForm').onsubmit = async (e) => {
-  e.preventDefault();
-  const email = document.getElementById('authEmail').value.trim();
-  const password = document.getElementById('authPassword').value.trim();
-
-  if(!email || !password){
-    alert("Please enter both email and password.");
-    return;
-  }
-
-  try {
-    await loginUser(email, password);
-    alert("Logged in successfully!");
-  } catch (error) {
-    console.error("Login error:", error.code, error.message);
-    alert(`Login failed: ${error.message}`);
-  }
+document.getElementById('loginBtn').onclick = async () => {
+  const email = document.getElementById('authEmail').value;
+  const pass = document.getElementById('authPassword').value;
+  try { await loginUser(email, pass); } 
+  catch(e){ alert(e.message); }  // <--- replace this line
 };
 </script>
 
