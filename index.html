@@ -10,31 +10,6 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, updateDoc, increment, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'tapmap-v1';
-
-        window.db = db;
-        window.appId = appId;
-        window.auth = auth;
-
-        signInAnonymously(auth).catch(console.error);
-        
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                window.currentUser = user;
-                initAnalytics();
-            }
-        });
-    </script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
@@ -65,46 +40,56 @@
 </head>
 <body class="text-slate-900 overflow-x-hidden">
 
-    <!-- Notification Container (Toasts) -->
-    <div id="toast-container" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] flex flex-col gap-2 pointer-events-none"></div>
+<!-- AUTH MODAL -->
+<div id="authSection" class="fixed inset-0 z-[200] flex items-center justify-center bg-slate-100">
+  <div class="bg-white p-8 rounded-3xl shadow-xl w-full max-w-sm">
+    <h2 class="text-xl font-bold mb-6 text-center">TapMap Login</h2>
+    <input id="authEmail" type="email" placeholder="Email" class="w-full mb-4 px-4 py-3 rounded-xl border">
+    <input id="authPassword" type="password" placeholder="Password" class="w-full mb-6 px-4 py-3 rounded-xl border">
+    <button id="loginBtn" class="w-full bg-indigo-600 text-white py-3 rounded-xl mb-3">Login</button>
+    <button id="registerBtn" class="w-full bg-slate-200 py-3 rounded-xl">Create Account</button>
+  </div>
+</div>
 
-    <!-- Header -->
-    <header class="fixed top-0 w-full z-[100] glass px-4 md:px-6 py-4 flex justify-between items-center shadow-sm">
-        <div class="flex items-center gap-2">
-            <div class="w-10 h-10 gradient-btn rounded-xl flex items-center justify-center text-white"><i data-lucide="map-pin"></i></div>
-            <h1 class="text-xl font-bold hidden sm:block">Tap<span class="gradient-text">Map</span></h1>
-        </div>
-        
-        <div class="flex items-center gap-3">
-            <div class="flex bg-slate-100 p-1 rounded-full border mr-2">
-                <button id="toggleEdit" onclick="switchView('edit')" class="px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all bg-white text-indigo-600 shadow-sm">Editor</button>
-                <button id="togglePreview" onclick="switchView('preview')" class="px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all text-slate-500">Preview</button>
-            </div>
+<!-- Notification Container (Toasts) -->
+<div id="toast-container" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] flex flex-col gap-2 pointer-events-none"></div>
 
-            <!-- Notification Bell Button -->
-            <div class="relative">
-                <button onclick="toggleNotifications()" class="w-10 h-10 rounded-full bg-white border flex items-center justify-center text-slate-600 hover:bg-slate-50 transition-colors relative">
-                    <i data-lucide="bell" class="w-5 h-5"></i>
-                    <span id="notifBadge" class="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center hidden">0</span>
-                </button>
+<!-- Header -->
+<header class="fixed top-0 w-full z-[100] glass px-4 md:px-6 py-4 flex justify-between items-center shadow-sm">
+  <div class="flex items-center gap-2">
+    <div class="w-10 h-10 gradient-btn rounded-xl flex items-center justify-center text-white"><i data-lucide="map-pin"></i></div>
+    <h1 class="text-xl font-bold hidden sm:block">Tap<span class="gradient-text">Map</span></h1>
+  </div>
+  
+  <div class="flex items-center gap-3">
+      <div class="flex bg-slate-100 p-1 rounded-full border mr-2">
+          <button id="toggleEdit" onclick="switchView('edit')" class="px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all bg-white text-indigo-600 shadow-sm">Editor</button>
+          <button id="togglePreview" onclick="switchView('preview')" class="px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all text-slate-500">Preview</button>
+      </div>
 
-                <!-- Notification Dropdown Panel -->
-                <div id="notificationDropdown" class="absolute right-0 mt-3 w-72 sm:w-80 bg-white rounded-3xl border shadow-2xl z-[110] hidden overflow-hidden">
-                    <div class="p-4 border-b bg-slate-50/50 flex justify-between items-center">
-                        <h3 class="font-bold text-sm">Notifications</h3>
-                        <button onclick="clearNotifications()" class="text-[10px] text-indigo-600 font-bold uppercase hover:underline">Clear all</button>
-                    </div>
-                    <div id="notificationList" class="max-h-96 overflow-y-auto py-2">
-                        <div class="p-8 text-center text-slate-400">
-                            <i data-lucide="bell-off" class="w-8 h-8 mx-auto mb-2 opacity-20"></i>
-                            <p class="text-xs">No recent activity</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </header>
+      <!-- Notification Bell Button -->
+      <div class="relative">
+          <button onclick="toggleNotifications()" class="w-10 h-10 rounded-full bg-white border flex items-center justify-center text-slate-600 hover:bg-slate-50 transition-colors relative">
+              <i data-lucide="bell" class="w-5 h-5"></i>
+              <span id="notifBadge" class="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center hidden">0</span>
+          </button>
 
+          <!-- Notification Dropdown Panel -->
+          <div id="notificationDropdown" class="absolute right-0 mt-3 w-72 sm:w-80 bg-white rounded-3xl border shadow-2xl z-[110] hidden overflow-hidden">
+              <div class="p-4 border-b bg-slate-50/50 flex justify-between items-center">
+                  <h3 class="font-bold text-sm">Notifications</h3>
+                  <button onclick="clearNotifications()" class="text-[10px] text-indigo-600 font-bold uppercase hover:underline">Clear all</button>
+              </div>
+              <div id="notificationList" class="max-h-96 overflow-y-auto py-2">
+                  <div class="p-8 text-center text-slate-400">
+                      <i data-lucide="bell-off" class="w-8 h-8 mx-auto mb-2 opacity-20"></i>
+                      <p class="text-xs">No recent activity</p>
+                  </div>
+              </div>
+          </div>
+      </div>
+  </div>
+</header>
     <main class="pt-24 pb-12 px-4 md:px-8 max-w-[1440px] mx-auto">
         <!-- Dashboard Stats -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -242,7 +227,7 @@
     </main>
 
     <!-- Modal -->
-    <div id="shareModal" class="fixed inset-0 z-[200] bg-black/70 backdrop-blur-md hidden flex items-center justify-center p-4">
+   <div id="shareModal" class="fixed inset-0 z-[200] bg-black/70 backdrop-blur-md hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-[2.5rem] w-full max-w-sm p-8 text-center relative shadow-2xl scale-in">
             <button onclick="closeShareModal()" class="absolute top-6 right-6 text-slate-400 hover:text-slate-600"><i data-lucide="x"></i></button>
             <h2 class="text-xl font-bold mb-1">Your Store Pass</h2>
@@ -255,41 +240,63 @@
     </div>
 
     <script type="module">
-        import { getFirestore, doc, setDoc, updateDoc, increment, collection, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import {
+  db,
+  auth,
+  registerUser,
+  loginUser,
+  logoutUser,
+  listenAuth,
+  saveBusiness,
+  loadBusiness,
+  logActivity,
+  listenAnalytics
+} from './firebase.js';
 
-        window.logActivity = async (type) => {
-            if (!window.currentUser) return;
-            const statsRef = doc(window.db, 'artifacts', window.appId, 'public', 'data', 'analytics', 'global');
-            await updateDoc(statsRef, { [type]: increment(1) }).catch(() => setDoc(statsRef, { views: 0, scans: 0, maps: 0, contacts: 0, [type]: 1 }));
-            
-            // Notification Logic
-            let title = "";
-            let icon = "info";
-            if (type === 'contacts') { title = 'New Interaction'; icon = 'phone'; }
-            if (type === 'maps') { title = 'Map Navigation'; icon = 'navigation'; }
-            if (type === 'scans') { title = 'QR Scan'; icon = 'qr-code'; }
-            if (type === 'views') { title = 'Profile View'; icon = 'eye'; }
+window.currentUser = null;
 
-            if (title) {
-                showToast(`${title} recorded!`, 'success');
-                addNotification(title, `A user just performed a ${type} action.`, icon);
-            }
-        };
+// Hide dashboard until logged in
+const mainApp = document.querySelector('main');
+if(mainApp) mainApp.classList.add('hidden');
 
-        window.initAnalytics = () => {
-            const statsRef = doc(window.db, 'artifacts', window.appId, 'public', 'data', 'analytics', 'global');
-            onSnapshot(statsRef, (s) => {
-                if (s.exists()) {
-                    const d = s.data();
-                    document.getElementById('stat-views').innerText = d.views || 0;
-                    document.getElementById('stat-scans').innerText = d.scans || 0;
-                    document.getElementById('stat-maps').innerText = d.maps || 0;
-                    document.getElementById('stat-contacts').innerText = d.contacts || 0;
-                }
-            });
-            window.logActivity('views');
-        };
-    </script>
+listenAuth(async (user) => {
+  if(user){
+    window.currentUser = user;
+    document.getElementById('authSection').classList.add('hidden');
+    if(mainApp) mainApp.classList.remove('hidden');
+
+    const data = await loadBusiness(user.uid);
+    if(data) window.appState = data;
+
+    listenAnalytics(user.uid, (d)=>{
+      document.getElementById('stat-views').innerText = d.views || 0;
+      document.getElementById('stat-scans').innerText = d.scans || 0;
+      document.getElementById('stat-maps').innerText = d.maps || 0;
+      document.getElementById('stat-contacts').innerText = d.contacts || 0;
+    });
+
+    logActivity(user.uid, 'views');
+  } else {
+    window.currentUser = null;
+    document.getElementById('authSection').classList.remove('hidden');
+    if(mainApp) mainApp.classList.add('hidden');
+  }
+});
+
+// Auth button events
+document.getElementById('registerBtn').onclick = async () => {
+  const email = document.getElementById('authEmail').value;
+  const pass = document.getElementById('authPassword').value;
+  try { await registerUser(email, pass); } 
+  catch(e){ alert(e.message); }
+};
+document.getElementById('loginBtn').onclick = async () => {
+  const email = document.getElementById('authEmail').value;
+  const pass = document.getElementById('authPassword').value;
+  try { await loginUser(email, pass); } 
+  catch(e){ alert(e.message); }
+};
+</script>
 
     <script>
         let appState = { 
