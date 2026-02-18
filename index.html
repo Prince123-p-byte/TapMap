@@ -1,16 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TapMap | Smart Business Dashboard</title>
-    
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TapMap | Smart Business Dashboard</title>
 
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
         :root { --primary: #6366f1; --secondary: #a855f7; --accent: #ec4899; }
@@ -44,10 +43,12 @@
 <div id="authSection" class="fixed inset-0 z-[200] flex items-center justify-center bg-slate-100">
   <div class="bg-white p-8 rounded-3xl shadow-xl w-full max-w-sm">
     <h2 class="text-xl font-bold mb-6 text-center">TapMap Login</h2>
-    <input id="authEmail" type="email" placeholder="Email" class="w-full mb-4 px-4 py-3 rounded-xl border">
-    <input id="authPassword" type="password" placeholder="Password" class="w-full mb-6 px-4 py-3 rounded-xl border">
-    <button id="loginBtn" class="w-full bg-indigo-600 text-white py-3 rounded-xl mb-3">Login</button>
-    <button id="registerBtn" class="w-full bg-slate-200 py-3 rounded-xl">Create Account</button>
+    <form id="authForm" class="flex flex-col">
+      <input id="authEmail" type="email" placeholder="Email" class="w-full mb-4 px-4 py-3 rounded-xl border" required>
+      <input id="authPassword" type="password" placeholder="Password" class="w-full mb-6 px-4 py-3 rounded-xl border" required minlength="6">
+      <button id="loginBtn" type="submit" class="w-full bg-indigo-600 text-white py-3 rounded-xl mb-3">Login</button>
+      <button id="registerBtn" type="button" class="w-full bg-slate-200 py-3 rounded-xl">Create Account</button>
+    </form>
   </div>
 </div>
 
@@ -239,7 +240,7 @@
         </div>
     </div>
 
-    <script type="module">
+  <script type="module">
 import {
   db,
   auth,
@@ -259,6 +260,7 @@ window.currentUser = null;
 const mainApp = document.querySelector('main');
 if(mainApp) mainApp.classList.add('hidden');
 
+// Listen for auth state changes
 listenAuth(async (user) => {
   if(user){
     window.currentUser = user;
@@ -283,18 +285,48 @@ listenAuth(async (user) => {
   }
 });
 
-// Auth button events
+// Handle Register
 document.getElementById('registerBtn').onclick = async () => {
-  const email = document.getElementById('authEmail').value;
-  const pass = document.getElementById('authPassword').value;
-  try { await registerUser(email, pass); } 
-  catch(e){ alert(e.message); }
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value.trim();
+
+  if(!email || !password){
+    alert("Please enter both email and password.");
+    return;
+  }
+
+  if(password.length < 6){
+    alert("Password must be at least 6 characters.");
+    return;
+  }
+
+  try {
+    await registerUser(email, password);
+    alert("Account created successfully! You are now logged in.");
+  } catch (error) {
+    console.error("Register error:", error.code, error.message);
+    alert(`Registration failed: ${error.message}`);
+  }
 };
-document.getElementById('loginBtn').onclick = async () => {
-  const email = document.getElementById('authEmail').value;
-  const pass = document.getElementById('authPassword').value;
-  try { await loginUser(email, pass); } 
-  catch(e){ alert(e.message); }
+
+// Handle Login
+document.getElementById('authForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value.trim();
+
+  if(!email || !password){
+    alert("Please enter both email and password.");
+    return;
+  }
+
+  try {
+    await loginUser(email, password);
+    alert("Logged in successfully!");
+  } catch (error) {
+    console.error("Login error:", error.code, error.message);
+    alert(`Login failed: ${error.message}`);
+  }
 };
 </script>
 
