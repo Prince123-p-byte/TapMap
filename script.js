@@ -9,7 +9,8 @@ import {
     listenBusiness,
     listenAllBusinesses,
     logActivity,
-    listenAnalytics
+    listenAnalytics,
+    listenAuth  // This was missing!
 } from './firebase.js';
 
 // ==================== GLOBAL STATE ====================
@@ -72,13 +73,15 @@ document.addEventListener('DOMContentLoaded', () => {
     setupAuthForm();
 
     // Listen to auth state
-    listenAuth(handleAuthChange);
+    if (typeof listenAuth === 'function') {
+        listenAuth(handleAuthChange);
+    } else {
+        console.error('listenAuth is not defined');
+    }
 });
 
 function setupAuthForm() {
     const authForm = document.getElementById('authForm');
-    const loginBtn = document.getElementById('loginBtn');
-    const registerBtn = document.getElementById('registerBtn');
     const authError = document.getElementById('authError');
 
     if (!authForm) return;
@@ -101,31 +104,31 @@ function setupAuthForm() {
             showLoading(false);
         }
     });
-
-    if (registerBtn) {
-        registerBtn.addEventListener('click', async () => {
-            const email = document.getElementById('authEmail')?.value;
-            const password = document.getElementById('authPassword')?.value;
-            
-            if (!email || !password) {
-                authError.textContent = 'Please enter email and password';
-                authError.classList.remove('hidden');
-                return;
-            }
-            
-            authError.classList.add('hidden');
-            showLoading(true);
-            
-            try {
-                await registerUser(email, password);
-            } catch (error) {
-                authError.textContent = error.message;
-                authError.classList.remove('hidden');
-                showLoading(false);
-            }
-        });
-    }
 }
+
+// Make register button work separately
+document.getElementById('registerBtn')?.addEventListener('click', async () => {
+    const email = document.getElementById('authEmail')?.value;
+    const password = document.getElementById('authPassword')?.value;
+    const authError = document.getElementById('authError');
+    
+    if (!email || !password) {
+        authError.textContent = 'Please enter email and password';
+        authError.classList.remove('hidden');
+        return;
+    }
+    
+    authError.classList.add('hidden');
+    showLoading(true);
+    
+    try {
+        await registerUser(email, password);
+    } catch (error) {
+        authError.textContent = error.message;
+        authError.classList.remove('hidden');
+        showLoading(false);
+    }
+});
 
 function showLoading(show) {
     const overlay = document.getElementById('loadingOverlay');
@@ -289,14 +292,20 @@ async function handleAuthChange(user) {
             contacts: 0,
             today: 0
         };
+        
+        showLoading(false);
     }
 }
 
 function updateProfileDisplay() {
-    // Get the first letter from business name, or use 'B' as fallback
-    const initial = appState.name && appState.name.trim() !== '' 
-        ? appState.name.charAt(0).toUpperCase() 
-        : (currentUser?.email ? currentUser.email.charAt(0).toUpperCase() : 'B');
+    // Get the first letter from business name, or use email first letter as fallback
+    let initial = 'B';
+    
+    if (appState.name && appState.name.trim() !== '') {
+        initial = appState.name.trim().charAt(0).toUpperCase();
+    } else if (currentUser?.email) {
+        initial = currentUser.email.charAt(0).toUpperCase();
+    }
     
     console.log('Updating profile initial to:', initial, 'from name:', appState.name);
     
@@ -392,6 +401,10 @@ function viewMyProfile() {
     }
     
     modal.classList.remove('hidden');
+    
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
 }
 
 function closeProfileModal() {
