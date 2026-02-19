@@ -1,604 +1,531 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TapMap | Smart Business Dashboard</title>
-
-<script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
-        :root { --primary: #6366f1; --secondary: #a855f7; --accent: #ec4899; }
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; }
-        .glass { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.3); }
-        .gradient-text { background: linear-gradient(135deg, var(--primary), var(--secondary), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .gradient-btn { background: linear-gradient(135deg, var(--primary), var(--secondary)); transition: all 0.3s ease; }
-        .phone-container { width: 340px; height: 680px; background: white; border-radius: 3rem; border: 12px solid #0f172a; position: relative; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
-        .phone-notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 140px; height: 25px; background: #0f172a; border-bottom-left-radius: 1.5rem; border-bottom-right-radius: 1.5rem; z-index: 50; }
-        .portfolio-carousel { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 1rem; padding: 0.5rem 0; scrollbar-width: none; }
-        .portfolio-carousel::-webkit-scrollbar { display: none; }
-        #map { height: 250px; width: 100%; border-radius: 1rem; z-index: 10; }
-        .stats-card { background: white; padding: 1.25rem; border-radius: 1.5rem; border: 1px solid #f1f5f9; }
-        .phone-qr-box { background: #f8fafc; border: 2px dashed #e2e8f0; border-radius: 1.5rem; padding: 1rem; text-align: center; }
-        #qrcode-preview img { display: inline-block !important; border-radius: 0.5rem; }
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        
-        /* Toast Animation */
-        .toast-enter { transform: translateY(100%); opacity: 0; }
-        .toast-active { transform: translateY(0); opacity: 1; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-        
-        /* Notification Dropdown */
-        #notificationDropdown { transform-origin: top right; transition: all 0.2s ease; }
-        #notificationDropdown.hidden { opacity: 0; transform: scale(0.95) translateY(-10px); pointer-events: none; display: block !important; }
-    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TapMap | Business Discovery Platform</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body class="text-slate-900 overflow-x-hidden">
-
-<!-- AUTH MODAL -->
-<div id="authSection" class="fixed inset-0 z-[200] flex items-center justify-center bg-slate-100">
-  <div class="bg-white p-8 rounded-3xl shadow-xl w-full max-w-sm">
-    <h2 class="text-xl font-bold mb-6 text-center">TapMap Login</h2>
-    <form id="authForm" class="flex flex-col">
-      <input id="authEmail" type="email" placeholder="Email" class="w-full mb-4 px-4 py-3 rounded-xl border" required>
-      <input id="authPassword" type="password" placeholder="Password" class="w-full mb-6 px-4 py-3 rounded-xl border" required minlength="6">
-      <button id="loginBtn" type="submit" class="w-full bg-indigo-600 text-white py-3 rounded-xl mb-3">Login</button>
-      <button id="registerBtn" type="button" class="w-full bg-slate-200 py-3 rounded-xl">Create Account</button>
-    </form>
-  </div>
-</div>
-
-<!-- Notification Container (Toasts) -->
-<div id="toast-container" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] flex flex-col gap-2 pointer-events-none"></div>
-
-<!-- Header -->
-<header class="fixed top-0 w-full z-[100] glass px-4 md:px-6 py-4 flex justify-between items-center shadow-sm">
-  <div class="flex items-center gap-2">
-    <div class="w-10 h-10 gradient-btn rounded-xl flex items-center justify-center text-white"><i data-lucide="map-pin"></i></div>
-    <h1 class="text-xl font-bold hidden sm:block">Tap<span class="gradient-text">Map</span></h1>
-  </div>
-  
-  <div class="flex items-center gap-3">
-      <div class="flex bg-slate-100 p-1 rounded-full border mr-2">
-          <button id="toggleEdit" onclick="switchView('edit')" class="px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all bg-white text-indigo-600 shadow-sm">Editor</button>
-          <button id="togglePreview" onclick="switchView('preview')" class="px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all text-slate-500">Preview</button>
-      </div>
-
-      <!-- Notification Bell Button -->
-      <div class="relative">
-          <button onclick="toggleNotifications()" class="w-10 h-10 rounded-full bg-white border flex items-center justify-center text-slate-600 hover:bg-slate-50 transition-colors relative">
-              <i data-lucide="bell" class="w-5 h-5"></i>
-              <span id="notifBadge" class="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center hidden">0</span>
-          </button>
-
-          <!-- Notification Dropdown Panel -->
-          <div id="notificationDropdown" class="absolute right-0 mt-3 w-72 sm:w-80 bg-white rounded-3xl border shadow-2xl z-[110] hidden overflow-hidden">
-              <div class="p-4 border-b bg-slate-50/50 flex justify-between items-center">
-                  <h3 class="font-bold text-sm">Notifications</h3>
-                  <button onclick="clearNotifications()" class="text-[10px] text-indigo-600 font-bold uppercase hover:underline">Clear all</button>
-              </div>
-              <div id="notificationList" class="max-h-96 overflow-y-auto py-2">
-                  <div class="p-8 text-center text-slate-400">
-                      <i data-lucide="bell-off" class="w-8 h-8 mx-auto mb-2 opacity-20"></i>
-                      <p class="text-xs">No recent activity</p>
-                  </div>
-              </div>
-          </div>
-      </div>
-  </div>
-</header>
-    <main class="pt-24 pb-12 px-4 md:px-8 max-w-[1440px] mx-auto">
-        <!-- Dashboard Stats -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div class="stats-card text-center">
-                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Profile Views</p>
-                <h3 id="stat-views" class="text-2xl font-bold">0</h3>
+<body class="text-slate-900 overflow-hidden">
+    <!-- AUTH MODAL -->
+    <div id="authSection" class="fixed inset-0 z-[200] flex items-center justify-center bg-slate-100">
+        <div class="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md">
+            <div class="flex justify-center mb-6">
+                <div class="w-16 h-16 gradient-btn rounded-2xl flex items-center justify-center text-white">
+                    <i data-lucide="map-pin" class="w-8 h-8"></i>
+                </div>
             </div>
-            <div class="stats-card text-center">
-                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">QR Scans</p>
-                <h3 id="stat-scans" class="text-2xl font-bold">0</h3>
-            </div>
-            <div class="stats-card text-center">
-                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Map Navs</p>
-                <h3 id="stat-maps" class="text-2xl font-bold">0</h3>
-            </div>
-            <div class="stats-card text-center">
-                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Interactions</p>
-                <h3 id="stat-contacts" class="text-2xl font-bold">0</h3>
-            </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            <!-- EDITOR -->
-            <div id="editorPanel" class="lg:col-span-7 space-y-6">
+            <h2 class="text-2xl font-bold mb-2 text-center">Welcome to <span class="gradient-text">TapMap</span></h2>
+            <p class="text-sm text-slate-500 mb-6 text-center">Sign in to manage your business</p>
+            
+            <!-- Login Form -->
+            <form id="authForm" class="space-y-4">
+                <div>
+                    <label class="text-xs font-medium text-slate-500 mb-1 block">Email</label>
+                    <input type="email" id="authEmail" required class="w-full px-4 py-3 rounded-xl border focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div>
+                    <label class="text-xs font-medium text-slate-500 mb-1 block">Password</label>
+                    <input type="password" id="authPassword" required minlength="6" class="w-full px-4 py-3 rounded-xl border focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
                 
-                <!-- Branding Section -->
-                <section class="bg-white p-6 rounded-3xl border shadow-sm">
-                    <h2 class="text-lg font-bold mb-4 flex items-center gap-2"><i data-lucide="palette" class="text-indigo-500 w-5 h-5"></i> Business Profile</h2>
-                    <div class="mb-6">
-                        <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Banner Image</label>
-                        <div class="relative border-2 border-dashed border-slate-200 rounded-2xl h-32 flex flex-col items-center justify-center cursor-pointer overflow-hidden hover:border-indigo-400 transition-all">
-                            <input type="file" id="coverInput" class="absolute inset-0 opacity-0 cursor-pointer z-10" accept="image/*" onchange="handleCoverUpload(event)">
-                            <img id="coverPreview" class="absolute inset-0 w-full h-full object-cover hidden">
-                            <div id="coverText" class="text-center p-4">
-                                <i data-lucide="image" class="w-8 h-8 mx-auto text-slate-300 mb-1"></i>
-                                <p class="text-xs text-slate-500">Tap to upload banner</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <input type="text" id="inputName" oninput="sync()" placeholder="Store Name" class="w-full px-4 py-3 rounded-xl border focus:ring-2 ring-indigo-500 outline-none">
-                        <input type="text" id="inputTagline" oninput="sync()" placeholder="Slogan / Tagline" class="w-full px-4 py-3 rounded-xl border focus:ring-2 ring-indigo-500 outline-none">
-                        <textarea id="inputDesc" oninput="sync()" placeholder="Brief bio or welcome message..." class="md:col-span-2 w-full px-4 py-3 rounded-xl border focus:ring-2 ring-indigo-500 outline-none h-24"></textarea>
-                    </div>
-                </section>
+                <div id="authError" class="text-red-500 text-sm hidden"></div>
+                
+                <button type="submit" id="loginBtn" class="w-full gradient-btn text-white py-3 rounded-xl font-semibold hover:shadow-lg transition-all">
+                    Sign In
+                </button>
+                
+                <button type="button" id="registerBtn" class="w-full bg-slate-100 py-3 rounded-xl font-semibold hover:bg-slate-200 transition-all">
+                    Create Account
+                </button>
+            </form>
+            
+            <p class="text-xs text-center text-slate-400 mt-6">Demo: test@example.com / password123</p>
+        </div>
+    </div>
 
-                <!-- Contact Info -->
-                <section class="bg-white p-6 rounded-3xl border shadow-sm">
-                    <h2 class="text-lg font-bold mb-4 flex items-center gap-2"><i data-lucide="phone-call" class="text-emerald-500 w-5 h-5"></i> Contact Details</h2>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="space-y-1">
-                            <label class="text-[10px] font-bold text-slate-400 uppercase ml-2">Phone</label>
-                            <input type="tel" id="inputPhone" oninput="sync()" placeholder="+1 234 567 890" class="w-full px-4 py-3 rounded-xl border focus:ring-2 ring-emerald-500 outline-none">
-                        </div>
-                        <div class="space-y-1">
-                            <label class="text-[10px] font-bold text-slate-400 uppercase ml-2">Email</label>
-                            <input type="email" id="inputEmail" oninput="sync()" placeholder="hello@business.com" class="w-full px-4 py-3 rounded-xl border focus:ring-2 ring-emerald-500 outline-none">
-                        </div>
-                    </div>
-                </section>
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-white/80 backdrop-blur-sm z-[150] hidden flex items-center justify-center">
+        <div class="loader"></div>
+    </div>
 
-                <!-- Portfolio Items -->
-                <section class="bg-white p-6 rounded-3xl border shadow-sm">
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-lg font-bold flex items-center gap-2"><i data-lucide="layout-grid" class="text-pink-500 w-5 h-5"></i> Portfolio</h2>
-                        <button onclick="addPortfolioItem()" class="p-2 gradient-btn text-white rounded-lg"><i data-lucide="plus" class="w-4 h-4"></i></button>
-                    </div>
-                    <div id="portfolioList" class="space-y-3"></div>
-                </section>
+    <!-- Notification Container -->
+    <div id="toast-container" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] flex flex-col gap-2 pointer-events-none"></div>
 
-                <!-- Map & Location -->
-                <section class="bg-white p-6 rounded-3xl border shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <h2 class="text-lg font-bold flex items-center gap-2"><i data-lucide="map" class="text-blue-500 w-5 h-5"></i> Business Location</h2>
-                        <button id="syncBtn" onclick="syncToRealTimeLocation()" class="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all">
-                            <i data-lucide="locate" class="w-4 h-4"></i> Sync My Location
-                        </button>
-                    </div>
-                    <div class="relative mb-4">
-                        <input type="text" id="inputAddress" oninput="sync()" placeholder="Calculating address..." class="w-full px-4 py-3 rounded-xl border focus:ring-2 ring-indigo-500 outline-none pr-10">
-                        <div id="addrLoader" class="absolute right-3 top-3 hidden"><div class="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div></div>
-                    </div>
-                    <div id="map"></div>
-                </section>
+    <!-- Main App -->
+    <div id="app" class="hidden h-screen flex flex-col">
+        <!-- Header -->
+        <header class="glass px-4 py-3 flex justify-between items-center shadow-sm z-20">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 gradient-btn rounded-xl flex items-center justify-center text-white">
+                    <i data-lucide="map-pin" class="w-5 h-5"></i>
+                </div>
+                <h1 class="text-xl font-bold">Tap<span class="gradient-text">Map</span></h1>
             </div>
+            
+            <div class="flex items-center gap-2">
+                <!-- View Toggle -->
+                <div class="flex bg-slate-100 p-1 rounded-full border mr-2">
+                    <button onclick="switchView('dashboard')" id="toggleDashboard" class="px-4 py-1.5 rounded-full text-sm font-semibold transition-all bg-white text-indigo-600 shadow-sm">Dashboard</button>
+                    <button onclick="switchView('editor')" id="toggleEditor" class="px-4 py-1.5 rounded-full text-sm font-semibold transition-all text-slate-500">Editor</button>
+                    <button onclick="switchView('analytics')" id="toggleAnalytics" class="px-4 py-1.5 rounded-full text-sm font-semibold transition-all text-slate-500">Analytics</button>
+                </div>
 
-            <!-- PREVIEW -->
-            <div id="previewPanel" class="lg:col-span-5 flex justify-center">
-                <div id="phoneWrapper" class="phone-container">
-                    <div class="phone-notch"></div>
-                    <div class="flex-1 overflow-y-auto hide-scrollbar pb-32">
-                        <div id="prevCover" class="h-44 bg-slate-800 relative bg-cover bg-center flex items-center justify-center p-6 text-center">
-                            <div class="absolute inset-0 bg-black/40 backdrop-blur-[1px]"></div>
-                            <div class="text-white relative z-10">
-                                <h2 id="prevName" class="text-xl font-bold">Store Name</h2>
-                                <p id="prevTagline" class="text-xs opacity-80">Slogan here</p>
+                <!-- Notification Bell -->
+                <div class="relative">
+                    <button onclick="toggleNotifications()" class="w-10 h-10 rounded-full bg-white border flex items-center justify-center text-slate-600 hover:bg-slate-50 transition-colors relative">
+                        <i data-lucide="bell" class="w-5 h-5"></i>
+                        <span id="notifBadge" class="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center hidden">0</span>
+                    </button>
+
+                    <!-- Notification Dropdown -->
+                    <div id="notificationDropdown" class="absolute right-0 mt-3 w-80 bg-white rounded-2xl border shadow-2xl z-[110] hidden overflow-hidden">
+                        <div class="p-4 border-b bg-slate-50 flex justify-between items-center">
+                            <h3 class="font-bold">Notifications</h3>
+                            <button onclick="clearNotifications()" class="text-xs text-indigo-600 font-medium hover:underline">Clear all</button>
+                        </div>
+                        <div id="notificationList" class="max-h-96 overflow-y-auto py-2">
+                            <div class="p-8 text-center text-slate-400">
+                                <i data-lucide="bell-off" class="w-8 h-8 mx-auto mb-2 opacity-20"></i>
+                                <p class="text-sm">No notifications</p>
                             </div>
                         </div>
+                    </div>
+                </div>
 
-                        <div class="p-5 space-y-6">
-                            <div id="prevDesc" class="text-[11px] text-slate-500 text-center px-4 leading-relaxed">About the business...</div>
+                <!-- Profile Dropdown -->
+                <div class="relative">
+                    <button onclick="toggleProfileMenu()" class="w-10 h-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white flex items-center justify-center font-bold hover:shadow-lg transition-shadow">
+                        <span id="profileInitial">B</span>
+                    </button>
 
-                            <div class="flex justify-center gap-4">
-                                <a id="prevPhoneLink" href="#" onclick="logActivity('contacts')" class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><i data-lucide="phone" class="w-5 h-5"></i></a>
-                                <a id="prevEmailLink" href="#" onclick="logActivity('contacts')" class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i data-lucide="mail" class="w-5 h-5"></i></a>
+                    <!-- Profile Dropdown Menu -->
+                    <div id="profileMenu" class="absolute right-0 mt-3 w-72 bg-white rounded-2xl border shadow-2xl z-[110] hidden overflow-hidden">
+                        <!-- Profile Header -->
+                        <div class="p-4 bg-gradient-to-r from-indigo-500 to-purple-500 text-white">
+                            <div class="flex items-center gap-3">
+                                <div class="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-xl font-bold">
+                                    <span id="profileMenuInitial">B</span>
+                                </div>
+                                <div>
+                                    <h3 id="profileMenuName" class="font-bold">Your Business</h3>
+                                    <p id="profileMenuEmail" class="text-xs opacity-90">business@example.com</p>
+                                </div>
                             </div>
-
-                            <div>
-                                <h3 class="text-[10px] font-bold text-slate-400 uppercase mb-3 tracking-widest px-1">Gallery</h3>
-                                <div id="prevPortfolio" class="portfolio-carousel"></div>
+                        </div>
+                        
+                        <!-- Quick Stats -->
+                        <div class="p-4 border-b">
+                            <h4 class="text-xs font-bold text-slate-400 uppercase mb-3">Today's Performance</h4>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="bg-slate-50 p-3 rounded-xl">
+                                    <p class="text-xs text-slate-500">Views</p>
+                                    <p class="text-lg font-bold text-indigo-600" id="statsToday">0</p>
+                                </div>
+                                <div class="bg-slate-50 p-3 rounded-xl">
+                                    <p class="text-xs text-slate-500">Scans</p>
+                                    <p class="text-lg font-bold text-indigo-600" id="statsTodayScans">0</p>
+                                </div>
                             </div>
+                        </div>
+                        
+                        <!-- Menu Items -->
+                        <div class="p-2">
+                            <button onclick="viewMyProfile()" class="w-full px-4 py-3 text-left hover:bg-slate-50 rounded-xl transition-colors flex items-center gap-3">
+                                <i data-lucide="user" class="w-5 h-5 text-slate-400"></i>
+                                <span class="text-sm font-medium">My Profile</span>
+                            </button>
+                            <div class="border-t my-2"></div>
+                            <button onclick="logout()" class="w-full px-4 py-3 text-left hover:bg-red-50 rounded-xl transition-colors flex items-center gap-3 text-red-600">
+                                <i data-lucide="log-out" class="w-5 h-5"></i>
+                                <span class="text-sm font-medium">Logout</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
 
-                            <div class="phone-qr-box">
-                                <p class="text-[9px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Live Navigation</p>
-                                <div id="qrcode-preview" class="mb-3 flex justify-center scale-90"></div>
-                                <div class="flex items-center justify-center gap-1 text-slate-600 px-2">
-                                    <i data-lucide="map-pin" class="w-3 h-3 text-red-500 flex-shrink-0"></i>
-                                    <p id="prevAddress" class="text-[10px] font-medium truncate">Awaiting Location...</p>
+        <!-- Main Content Area -->
+        <div class="flex-1 flex overflow-hidden">
+            <!-- DASHBOARD VIEW with Sidebar -->
+            <div id="dashboardView" class="w-full h-full relative flex">
+                <!-- Sidebar -->
+                <div id="dashboardSidebar" class="w-80 bg-white shadow-xl z-10 flex flex-col border-r">
+                    <!-- Sidebar Header -->
+                    <div class="p-5 border-b">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="font-bold text-lg">Businesses Near You</h2>
+                            <span class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full font-medium">
+                                <span id="businessCount">0</span> active
+                            </span>
+                        </div>
+                        <div class="relative">
+                            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                            <input type="text" id="businessSearch" placeholder="Search businesses..." class="w-full pl-9 pr-4 py-2.5 bg-slate-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                    </div>
+
+                    <!-- Stats Cards in Sidebar -->
+                    <div class="p-5 border-b bg-slate-50">
+                        <h3 class="text-xs font-bold text-slate-400 uppercase mb-3">Your Stats</h3>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-white p-3 rounded-xl shadow-sm">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+                                        <i data-lucide="eye" class="w-4 h-4"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-slate-500">Views</p>
+                                        <p id="stat-views-sidebar" class="text-lg font-bold">0</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white p-3 rounded-xl shadow-sm">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-600">
+                                        <i data-lucide="qr-code" class="w-4 h-4"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-slate-500">Scans</p>
+                                        <p id="stat-scans-sidebar" class="text-lg font-bold">0</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
+
+                    <!-- Business List -->
+                    <div id="businessList" class="flex-1 overflow-y-auto">
+                        <!-- Businesses will be loaded here dynamically -->
+                        <div class="p-4 text-center text-slate-400">
+                            <i data-lucide="loader" class="w-8 h-8 mx-auto mb-2 animate-spin"></i>
+                            <p class="text-sm">Loading businesses...</p>
+                        </div>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="p-4 bg-slate-50 border-t">
+                        <button onclick="openShareModal()" class="w-full bg-white py-3 rounded-xl text-sm font-medium border hover:bg-slate-100 transition-colors flex items-center justify-center gap-2 mb-2">
+                            <i data-lucide="qr-code" class="w-4 h-4"></i> My QR Code
+                        </button>
+                        <button onclick="syncToRealTimeLocation()" class="w-full bg-indigo-600 text-white py-3 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2">
+                            <i data-lucide="locate" class="w-4 h-4"></i> Find My Location
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Map Area -->
+                <div class="flex-1 relative">
+                    <div id="dashboardMap" class="absolute inset-0"></div>
                     
-                    <div class="p-4 glass border-t mt-auto space-y-2">
-                        <button onclick="confirmRedirect()" class="w-full gradient-btn text-white py-3.5 rounded-2xl text-sm font-bold shadow-xl flex items-center justify-center gap-2">
-                            <i data-lucide="navigation" class="w-4 h-4"></i> Take Me There
-                        </button>
-                        <button onclick="openShareModal()" class="w-full bg-slate-100 text-slate-700 py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center gap-2">
-                            <i data-lucide="qr-code" class="w-4 h-4"></i> Generate My QR
-                        </button>
+                    <!-- Floating Mini Stats -->
+                    <div class="absolute top-4 right-4 z-10 flex gap-2">
+                        <div class="stats-card-mini bg-white/95 backdrop-blur-sm shadow-lg">
+                            <div class="flex items-center gap-1">
+                                <i data-lucide="eye" class="w-3 h-3 text-blue-600"></i>
+                                <span id="stat-views-mini" class="text-sm font-bold">0</span>
+                            </div>
+                        </div>
+                        <div class="stats-card-mini bg-white/95 backdrop-blur-sm shadow-lg">
+                            <div class="flex items-center gap-1">
+                                <i data-lucide="qr-code" class="w-3 h-3 text-green-600"></i>
+                                <span id="stat-scans-mini" class="text-sm font-bold">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- EDITOR VIEW -->
+            <div id="editorView" class="hidden w-full h-full overflow-y-auto bg-slate-50">
+                <div class="max-w-3xl mx-auto p-6 space-y-4">
+                    <!-- Cover Photo -->
+                    <div class="bg-white rounded-2xl shadow-sm overflow-hidden">
+                        <div class="relative h-48 bg-slate-200 group">
+                            <img id="coverPreview" class="w-full h-full object-cover hidden">
+                            <div id="coverText" class="absolute inset-0 flex flex-col items-center justify-center">
+                                <i data-lucide="camera" class="w-12 h-12 text-slate-400 mb-2"></i>
+                                <p class="text-sm text-slate-500">Add cover photo</p>
+                            </div>
+                            <input type="file" id="coverInput" class="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" onchange="handleCoverUpload(event)">
+                            
+                            <!-- Profile Picture Overlay -->
+                            <div class="absolute -bottom-12 left-6">
+                                <div class="relative w-24 h-24 rounded-2xl border-4 border-white bg-gradient-to-br from-indigo-500 to-purple-500 shadow-lg flex items-center justify-center text-white cursor-pointer group" onclick="uploadProfilePicture()">
+                                    <i data-lucide="store" class="w-12 h-12"></i>
+                                    <div class="absolute inset-0 bg-black/50 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                        <i data-lucide="camera" class="w-6 h-6 text-white"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Business Name Area -->
+                        <div class="pt-14 pb-5 px-6">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <input type="text" id="inputName" oninput="sync()" placeholder="Business Name" value="" class="text-2xl font-bold bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg px-2 py-1 w-full">
+                                    <div class="flex items-center gap-2 mt-1">
+                                        <input type="text" id="inputTagline" oninput="sync()" placeholder="Tagline" value="" class="text-sm text-slate-500 bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg px-2 py-1">
+                                        <span class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">Active</span>
+                                    </div>
+                                </div>
+                                <button onclick="saveBusinessProfile()" class="gradient-btn text-white px-6 py-2.5 rounded-xl font-medium flex items-center gap-2 shadow-lg hover:shadow-xl transition-all">
+                                    <i data-lucide="save" class="w-4 h-4"></i> Save Profile
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- About Section -->
+                    <div class="bg-white rounded-2xl shadow-sm p-6">
+                        <h3 class="font-bold text-lg mb-4 flex items-center gap-2">
+                            <i data-lucide="info" class="w-5 h-5 text-indigo-500"></i> About
+                        </h3>
+                        <textarea id="inputDesc" oninput="sync()" placeholder="Tell people about your business..." rows="4" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none resize-none"></textarea>
+                    </div>
+
+                    <!-- Contact Info -->
+                    <div class="bg-white rounded-2xl shadow-sm p-6">
+                        <h3 class="font-bold text-lg mb-4 flex items-center gap-2">
+                            <i data-lucide="phone-call" class="w-5 h-5 text-green-500"></i> Contact Info
+                        </h3>
+                        <div class="space-y-4">
+                            <div class="flex items-center gap-4">
+                                <div class="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center text-green-600">
+                                    <i data-lucide="phone" class="w-5 h-5"></i>
+                                </div>
+                                <input type="tel" id="inputPhone" oninput="sync()" placeholder="Phone number" value="" class="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <div class="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600">
+                                    <i data-lucide="mail" class="w-5 h-5"></i>
+                                </div>
+                                <input type="email" id="inputEmail" oninput="sync()" placeholder="Email address" value="" class="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Location Section -->
+                    <div class="bg-white rounded-2xl shadow-sm p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold text-lg flex items-center gap-2">
+                                <i data-lucide="map" class="w-5 h-5 text-blue-500"></i> Location
+                            </h3>
+                            <button onclick="syncToRealTimeLocation()" class="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-medium flex items-center gap-2 hover:bg-slate-800 transition-colors">
+                                <i data-lucide="locate" class="w-4 h-4"></i> Use My Location
+                            </button>
+                        </div>
+                        
+                        <!-- Address Input -->
+                        <div class="relative mb-4">
+                            <i data-lucide="map-pin" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                            <input type="text" id="inputAddress" oninput="sync()" placeholder="Enter business address" 
+                                   value=""
+                                   class="w-full pl-9 pr-10 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                            <div id="addrLoader" class="absolute right-3 top-1/2 -translate-y-1/2 hidden">
+                                <div class="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- Location Action Buttons -->
+                        <div class="flex gap-2 mb-4">
+                            <button onclick="openLocationSearch()" class="flex-1 px-4 py-2.5 border rounded-xl text-sm font-medium hover:bg-slate-50 transition-colors flex items-center justify-center gap-2">
+                                <i data-lucide="search" class="w-4 h-4"></i> Search Address
+                            </button>
+                            <button onclick="syncToRealTimeLocation()" class="flex-1 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2">
+                                <i data-lucide="locate-fixed" class="w-4 h-4"></i> Current Location
+                            </button>
+                        </div>
+                        
+                        <!-- Map -->
+                        <div id="editorMap" class="h-64 rounded-xl"></div>
+                        
+                        <!-- Location Status -->
+                        <div class="mt-3 flex items-center gap-2 text-xs text-slate-500">
+                            <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                            <span>Drag pin to adjust location</span>
+                        </div>
+                    </div>
+
+                    <!-- Portfolio Grid -->
+                    <div class="bg-white rounded-2xl shadow-sm p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold text-lg flex items-center gap-2">
+                                <i data-lucide="layout-grid" class="w-5 h-5 text-pink-500"></i> Portfolio
+                            </h3>
+                            <button onclick="addPortfolioItem()" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium flex items-center gap-2 hover:bg-indigo-700 transition-colors">
+                                <i data-lucide="plus" class="w-4 h-4"></i> Add Photos
+                            </button>
+                        </div>
+                        <p class="text-xs text-slate-500 mb-4">Click on any image to change it</p>
+                        <div id="portfolioGrid" class="grid grid-cols-2 md:grid-cols-3 gap-4"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ANALYTICS VIEW -->
+            <div id="analyticsView" class="hidden w-full h-full overflow-y-auto bg-slate-50">
+                <div class="max-w-6xl mx-auto p-6 space-y-6">
+                    <!-- Header -->
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-2xl font-bold">Analytics Dashboard</h2>
+                        <select id="analyticsTimeframe" onchange="updateAnalyticsCharts()" class="px-4 py-2 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                            <option value="today">Today</option>
+                            <option value="week" selected>This Week</option>
+                            <option value="month">This Month</option>
+                        </select>
+                    </div>
+
+                    <!-- Key Metrics Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div class="analytics-card bg-white p-6 rounded-2xl shadow-sm">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-sm text-slate-500">Total Views</p>
+                                    <h3 class="text-3xl font-bold mt-1" id="analytics-views">0</h3>
+                                </div>
+                                <div class="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+                                    <i data-lucide="eye" class="w-6 h-6"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="analytics-card bg-white p-6 rounded-2xl shadow-sm">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-sm text-slate-500">QR Scans</p>
+                                    <h3 class="text-3xl font-bold mt-1" id="analytics-scans">0</h3>
+                                </div>
+                                <div class="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center text-green-600">
+                                    <i data-lucide="qr-code" class="w-6 h-6"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="analytics-card bg-white p-6 rounded-2xl shadow-sm">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-sm text-slate-500">Map Directions</p>
+                                    <h3 class="text-3xl font-bold mt-1" id="analytics-maps">0</h3>
+                                </div>
+                                <div class="w-12 h-12 rounded-full bg-purple-50 flex items-center justify-center text-purple-600">
+                                    <i data-lucide="navigation" class="w-6 h-6"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="analytics-card bg-white p-6 rounded-2xl shadow-sm">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-sm text-slate-500">Contacts</p>
+                                    <h3 class="text-3xl font-bold mt-1" id="analytics-contacts">0</h3>
+                                </div>
+                                <div class="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-amber-600">
+                                    <i data-lucide="phone" class="w-6 h-6"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Row -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="bg-white p-6 rounded-2xl shadow-sm">
+                            <h3 class="font-bold mb-4">Views Over Time</h3>
+                            <canvas id="viewsChart" height="250"></canvas>
+                        </div>
+
+                        <div class="bg-white p-6 rounded-2xl shadow-sm">
+                            <h3 class="font-bold mb-4">Activity Breakdown</h3>
+                            <canvas id="activityChart" height="250"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Recent Activity -->
+                    <div class="bg-white p-6 rounded-2xl shadow-sm">
+                        <h3 class="font-bold mb-4">Recent Activity</h3>
+                        <div id="recentActivity" class="space-y-3">
+                            <p class="text-sm text-slate-500 text-center py-4">No activity yet</p>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-    </main>
+    </div>
 
-    <!-- Modal -->
-   <div id="shareModal" class="fixed inset-0 z-[200] bg-black/70 backdrop-blur-md hidden flex items-center justify-center p-4">
-        <div class="bg-white rounded-[2.5rem] w-full max-w-sm p-8 text-center relative shadow-2xl scale-in">
-            <button onclick="closeShareModal()" class="absolute top-6 right-6 text-slate-400 hover:text-slate-600"><i data-lucide="x"></i></button>
-            <h2 class="text-xl font-bold mb-1">Your Store Pass</h2>
-            <p class="text-[11px] text-slate-400 mb-6 italic">Scan to start navigation</p>
-            <div id="qrcode-modal" class="inline-block p-4 bg-white rounded-3xl mb-6 border-2 border-slate-50 shadow-sm" onclick="simulateScan()"></div>
-            <button onclick="downloadQR()" class="w-full gradient-btn text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg">
-                <i data-lucide="save" class="w-5 h-5"></i> Download QR Pass
+    <!-- Profile View Modal -->
+    <div id="profileModal" class="fixed inset-0 z-[250] bg-black/70 backdrop-blur-md hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-[2rem] w-full max-w-md p-6 relative shadow-2xl scale-in">
+            <button onclick="closeProfileModal()" class="absolute top-6 right-6 text-slate-400 hover:text-slate-600">
+                <i data-lucide="x"></i>
+            </button>
+            
+            <div class="text-center mb-6">
+                <div class="w-24 h-24 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-500 mx-auto mb-4 flex items-center justify-center text-white">
+                    <i data-lucide="store" class="w-12 h-12"></i>
+                </div>
+                <h2 id="profileModalName" class="text-2xl font-bold">Your Business</h2>
+                <p id="profileModalTagline" class="text-sm text-slate-500 mt-1"></p>
+            </div>
+            
+            <div class="space-y-4">
+                <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+                    <i data-lucide="info" class="w-5 h-5 text-indigo-500"></i>
+                    <p id="profileModalDesc" class="text-sm text-slate-600"></p>
+                </div>
+                
+                <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+                    <i data-lucide="phone" class="w-5 h-5 text-green-500"></i>
+                    <p id="profileModalPhone" class="text-sm text-slate-600"></p>
+                </div>
+                
+                <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+                    <i data-lucide="mail" class="w-5 h-5 text-indigo-500"></i>
+                    <p id="profileModalEmail" class="text-sm text-slate-600"></p>
+                </div>
+                
+                <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+                    <i data-lucide="map-pin" class="w-5 h-5 text-purple-500"></i>
+                    <p id="profileModalAddress" class="text-sm text-slate-600"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Share Modal -->
+    <div id="shareModal" class="fixed inset-0 z-[200] bg-black/70 backdrop-blur-md hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-[2rem] w-full max-w-sm p-8 text-center relative shadow-2xl scale-in">
+            <button onclick="closeShareModal()" class="absolute top-6 right-6 text-slate-400 hover:text-slate-600">
+                <i data-lucide="x"></i>
+            </button>
+            <h2 class="text-2xl font-bold mb-1 gradient-text">Your QR Pass</h2>
+            <p class="text-sm text-slate-500 mb-6">Scan to get directions</p>
+            <div id="qrcode-modal" class="inline-block p-4 bg-white rounded-3xl mb-6 border-2 border-slate-100 shadow-lg" onclick="simulateScan()"></div>
+            <button onclick="downloadQR()" class="w-full gradient-btn text-white py-3.5 rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transition-all">
+                <i data-lucide="download" class="w-4 h-4"></i> Download QR Code
             </button>
         </div>
     </div>
 
- <script type="module">
-import {
-  db,
-  auth,
-  registerUser,
-  loginUser,
-  logoutUser,
-  listenAuth,
-  saveBusiness,
-  loadBusiness,
-  logActivity,
-  listenAnalytics
-} from './firebase.js';
-
-window.currentUser = null;
-
-// Hide dashboard until logged in
-const mainApp = document.querySelector('main');
-if(mainApp) mainApp.classList.add('hidden');
-
-listenAuth(async (user) => {
-  if(user){
-    window.currentUser = user;
-    document.getElementById('authSection').classList.add('hidden');
-    if(mainApp) mainApp.classList.remove('hidden');
-
-    const data = await loadBusiness(user.uid);
-    if(data) window.appState = data;
-
-    listenAnalytics(user.uid, (d)=>{
-      document.getElementById('stat-views').innerText = d.views || 0;
-      document.getElementById('stat-scans').innerText = d.scans || 0;
-      document.getElementById('stat-maps').innerText = d.maps || 0;
-      document.getElementById('stat-contacts').innerText = d.contacts || 0;
-    });
-
-    logActivity(user.uid, 'views');
-  } else {
-    window.currentUser = null;
-    document.getElementById('authSection').classList.remove('hidden');
-    if(mainApp) mainApp.classList.add('hidden');
-  }
-});
-
-// --- LOGIN / REGISTER HANDLERS ---
-document.getElementById('registerBtn').onclick = async () => {
-  const email = document.getElementById('authEmail').value;
-  const pass = document.getElementById('authPassword').value;
-  try { await registerUser(email, pass); } 
-  catch(e){ alert(e.message); }  // <--- replace this line
-};
-document.getElementById('loginBtn').onclick = async () => {
-  const email = document.getElementById('authEmail').value;
-  const pass = document.getElementById('authPassword').value;
-  try { await loginUser(email, pass); } 
-  catch(e){ alert(e.message); }  // <--- replace this line
-};
-</script>
-
-    <script>
-        let appState = { 
-            name: '', tagline: '', desc: '', address: '', phone: '', email: '',
-            portfolio: [], location: { lat: 0, lng: 0 } 
-        };
-        let map, marker, qrcodeModal, qrcodePreview;
-        let notifications = [];
-
-        window.addEventListener('DOMContentLoaded', () => {
-            lucide.createIcons();
-            initMap();
-            initQRs();
-
-            // Close dropdown when clicking outside
-            document.addEventListener('click', (e) => {
-                const drop = document.getElementById('notificationDropdown');
-                if (!drop.contains(e.target) && !e.target.closest('button[onclick="toggleNotifications()"]')) {
-                    drop.classList.add('hidden');
-                }
-            });
-        });
-
-        // NOTIFICATION CENTER LOGIC
-        function toggleNotifications() {
-            const drop = document.getElementById('notificationDropdown');
-            drop.classList.toggle('hidden');
-            if (!drop.classList.contains('hidden')) {
-                // Clear badge when opened
-                document.getElementById('notifBadge').classList.add('hidden');
-                document.getElementById('notifBadge').innerText = "0";
-            }
-        }
-
-        function addNotification(title, message, icon = 'bell') {
-            const notif = {
-                id: Date.now(),
-                title,
-                message,
-                icon,
-                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            };
-            notifications.unshift(notif);
-            updateNotificationUI();
-
-            // Update Badge if dropdown is closed
-            if (document.getElementById('notificationDropdown').classList.contains('hidden')) {
-                const badge = document.getElementById('notifBadge');
-                const count = parseInt(badge.innerText) + 1;
-                badge.innerText = count;
-                badge.classList.remove('hidden');
-            }
-        }
-
-        function updateNotificationUI() {
-            const list = document.getElementById('notificationList');
-            if (notifications.length === 0) {
-                list.innerHTML = `
-                    <div class="p-8 text-center text-slate-400">
-                        <i data-lucide="bell-off" class="w-8 h-8 mx-auto mb-2 opacity-20"></i>
-                        <p class="text-xs">No recent activity</p>
-                    </div>`;
-            } else {
-                list.innerHTML = notifications.map(n => `
-                    <div class="px-4 py-3 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 flex gap-3">
-                        <div class="w-8 h-8 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center flex-shrink-0">
-                            <i data-lucide="${n.icon}" class="w-4 h-4"></i>
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <div class="flex justify-between items-start mb-0.5">
-                                <p class="text-[11px] font-bold truncate">${n.title}</p>
-                                <span class="text-[9px] text-slate-400">${n.time}</span>
-                            </div>
-                            <p class="text-[10px] text-slate-500 leading-tight">${n.message}</p>
-                        </div>
-                    </div>
-                `).join('');
-            }
-            lucide.createIcons();
-        }
-
-        function clearNotifications() {
-            notifications = [];
-            updateNotificationUI();
-            showToast('History cleared');
-        }
-
-        // TOAST NOTIFICATION SYSTEM
-        function showToast(message, type = 'info') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'alert-circle' : 'info';
-            const color = type === 'success' ? 'text-emerald-500 bg-emerald-50' : type === 'error' ? 'text-red-500 bg-red-50' : 'text-indigo-500 bg-indigo-50';
-            
-            toast.className = `toast-enter flex items-center gap-3 px-6 py-3 rounded-full shadow-xl bg-white border pointer-events-auto mb-2`;
-            toast.innerHTML = `
-                <div class="w-6 h-6 rounded-full flex items-center justify-center ${color}">
-                    <i data-lucide="${icon}" class="w-4 h-4"></i>
-                </div>
-                <span class="text-xs font-bold text-slate-700">${message}</span>
-            `;
-            
-            container.appendChild(toast);
-            lucide.createIcons();
-            
-            setTimeout(() => toast.classList.add('toast-active'), 10);
-            setTimeout(() => {
-                toast.classList.remove('toast-active');
-                setTimeout(() => toast.remove(), 300);
-            }, 3000);
-        }
-
-        function initMap() {
-            map = L.map('map').setView([40.7128, -74.0060], 13);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-            marker = L.marker([40.7128, -74.0060], { draggable: true }).addTo(map);
-            marker.on('dragend', async (e) => {
-                const pos = e.target.getLatLng();
-                appState.location = { lat: pos.lat, lng: pos.lng };
-                await reverseGeocode(pos.lat, pos.lng);
-                updateQR();
-                addNotification('Map Updated', 'You manually adjusted the pin location.', 'map-pin');
-            });
-        }
-
-        async function syncToRealTimeLocation() {
-            const btn = document.getElementById('syncBtn');
-            btn.disabled = true;
-            btn.innerHTML = `<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Finding you...`;
-            lucide.createIcons();
-
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(async (pos) => {
-                    const lat = pos.coords.latitude;
-                    const lng = pos.coords.longitude;
-                    appState.location = { lat, lng };
-                    map.setView([lat, lng], 17);
-                    marker.setLatLng([lat, lng]);
-                    await reverseGeocode(lat, lng);
-                    updateQR();
-                    btn.disabled = false;
-                    btn.innerHTML = `<i data-lucide="check" class="w-4 h-4 text-emerald-500"></i> Synced`;
-                    lucide.createIcons();
-                    showToast('Location synced!', 'success');
-                    addNotification('GPS Sync', 'Store location updated via GPS.', 'locate');
-                }, (err) => {
-                    showToast('Failed to get location', 'error');
-                    btn.disabled = false;
-                    btn.innerHTML = `<i data-lucide="locate" class="w-4 h-4"></i> Retry Sync`;
-                    lucide.createIcons();
-                });
-            }
-        }
-
-        async function reverseGeocode(lat, lng) {
-            document.getElementById('addrLoader').classList.remove('hidden');
-            try {
-                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
-                const data = await res.json();
-                const addr = data.display_name || "Custom Pin Location";
-                document.getElementById('inputAddress').value = addr;
-                appState.address = addr;
-                document.getElementById('prevAddress').innerText = addr;
-            } catch (e) {
-                console.error(e);
-            }
-            document.getElementById('addrLoader').classList.add('hidden');
-        }
-
-        function handleCoverUpload(event) {
-            const file = event.target.files[0];
-            if(!file) return;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = e.target.result;
-                document.getElementById('coverPreview').src = img;
-                document.getElementById('coverPreview').classList.remove('hidden');
-                document.getElementById('coverText').classList.add('hidden');
-                document.getElementById('prevCover').style.backgroundImage = `url(${img})`;
-                showToast('Banner updated!', 'success');
-                addNotification('Image Upload', 'New banner image set.', 'image');
-            };
-            reader.readAsDataURL(file);
-        }
-
-        function initQRs() {
-            qrcodeModal = new QRCode(document.getElementById("qrcode-modal"), { text: "init", width: 180, height: 180 });
-            qrcodePreview = new QRCode(document.getElementById("qrcode-preview"), { text: "init", width: 100, height: 100 });
-        }
-
-        function sync() {
-            appState.name = document.getElementById('inputName').value;
-            appState.tagline = document.getElementById('inputTagline').value;
-            appState.desc = document.getElementById('inputDesc').value;
-            appState.address = document.getElementById('inputAddress').value;
-            appState.phone = document.getElementById('inputPhone').value;
-            appState.email = document.getElementById('inputEmail').value;
-
-            document.getElementById('prevName').innerText = appState.name || "Store Name";
-            document.getElementById('prevTagline').innerText = appState.tagline || "Your business slogan";
-            document.getElementById('prevDesc').innerText = appState.desc || "About the business...";
-            document.getElementById('prevAddress').innerText = appState.address || "Location not set";
-            
-            document.getElementById('prevPhoneLink').href = appState.phone ? `tel:${appState.phone}` : "#";
-            document.getElementById('prevEmailLink').href = appState.email ? `mailto:${appState.email}` : "#";
-            updateQR();
-        }
-
-        function updateQR() {
-            const link = `https://www.google.com/maps/search/?api=1&query=${appState.location.lat},${appState.location.lng}`;
-            if(qrcodeModal) qrcodeModal.makeCode(link);
-            if(qrcodePreview) qrcodePreview.makeCode(link);
-        }
-
-        function addPortfolioItem() {
-            const id = Date.now();
-            appState.portfolio.push({ 
-                id, 
-                name: 'New Product', 
-                image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400' 
-            });
-            renderEditorPortfolio();
-            renderPreviewPortfolio();
-            addNotification('Portfolio Change', 'Added a new item to gallery.', 'plus-square');
-        }
-
-        function triggerPortfolioUpload(id) {
-            document.getElementById(`file-${id}`).click();
-        }
-
-        function handlePortfolioUpload(id, event) {
-            const file = event.target.files[0];
-            if(!file) return;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const item = appState.portfolio.find(i => i.id === id);
-                if(item) {
-                    item.image = e.target.result;
-                    renderEditorPortfolio();
-                    renderPreviewPortfolio();
-                    showToast('Image uploaded!', 'success');
-                }
-            };
-            reader.readAsDataURL(file);
-        }
-
-        function renderEditorPortfolio() {
-            document.getElementById('portfolioList').innerHTML = appState.portfolio.map(item => `
-                <div class="flex items-center gap-4 bg-slate-50 p-3 rounded-2xl border hover:bg-white transition-all">
-                    <div onclick="triggerPortfolioUpload(${item.id})" class="relative w-16 h-16 flex-shrink-0 group cursor-pointer overflow-hidden rounded-xl border bg-slate-200">
-                        <img src="${item.image}" class="w-full h-full object-cover">
-                        <input type="file" id="file-${item.id}" class="hidden" accept="image/*" onchange="handlePortfolioUpload(${item.id}, event)">
-                        <div class="absolute inset-0 bg-black/40 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity">
-                            <i data-lucide="camera" class="w-4 h-4"></i>
-                        </div>
-                    </div>
-                    <div class="flex-1">
-                        <input type="text" value="${item.name}" oninput="appState.portfolio.find(i=>i.id===${item.id}).name=this.value; renderPreviewPortfolio()" class="w-full bg-transparent text-sm font-bold border-none outline-none focus:ring-1 ring-indigo-200 rounded px-1">
-                        <p class="text-[10px] text-slate-400 px-1 uppercase tracking-tighter">Tap image to change photo</p>
-                    </div>
-                    <button onclick="appState.portfolio=appState.portfolio.filter(i=>i.id!==${item.id}); renderEditorPortfolio(); renderPreviewPortfolio(); showToast('Item removed')" class="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-colors"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                </div>
-            `).join('');
-            lucide.createIcons();
-        }
-
-        function renderPreviewPortfolio() {
-            document.getElementById('prevPortfolio').innerHTML = appState.portfolio.map(item => `
-                <div class="min-w-[140px] bg-white rounded-2xl overflow-hidden border shadow-sm flex flex-col">
-                    <img src="${item.image}" class="w-full h-28 object-cover">
-                    <p class="p-2 text-[10px] font-bold text-center truncate text-slate-700">${item.name}</p>
-                </div>
-            `).join('');
-        }
-
-        function switchView(view) {
-            document.getElementById('editorPanel').className = view === 'edit' ? 'lg:col-span-7 space-y-6' : 'hidden';
-            document.getElementById('previewPanel').className = view === 'edit' ? 'lg:col-span-5 flex justify-center' : 'lg:col-span-12 flex justify-center scale-110 md:scale-100';
-            const btnEdit = document.getElementById('toggleEdit');
-            const btnPrev = document.getElementById('togglePreview');
-            if(view === 'edit') {
-                btnEdit.className = "px-4 py-1.5 rounded-full text-sm font-semibold transition-all bg-white text-indigo-600 shadow-sm";
-                btnPrev.className = "px-4 py-1.5 rounded-full text-sm font-semibold transition-all text-slate-500";
-            } else {
-                btnPrev.className = "px-4 py-1.5 rounded-full text-sm font-semibold transition-all bg-white text-indigo-600 shadow-sm";
-                btnEdit.className = "px-4 py-1.5 rounded-full text-sm font-semibold transition-all text-slate-500";
-            }
-        }
-
-        function openShareModal() { document.getElementById('shareModal').classList.remove('hidden'); }
-        function closeShareModal() { document.getElementById('shareModal').classList.add('hidden'); }
-        function simulateScan() { window.logActivity('scans'); }
-        function confirmRedirect() { window.logActivity('maps'); window.open(`https://www.google.com/maps/search/?api=1&query=${appState.location.lat},${appState.location.lng}`); }
-        function downloadQR() { 
-            const img = document.querySelector("#qrcode-modal img"); 
-            if(img) { 
-                const a = document.createElement("a"); 
-                a.href = img.src; a.download = "business-qr.png"; a.click(); 
-                showToast('QR Pass downloaded!', 'success');
-            } 
-        }
-    </script>
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script type="module" src="script.js"></script>
 </body>
 </html>

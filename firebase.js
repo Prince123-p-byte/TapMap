@@ -1,5 +1,3 @@
-// firebase.js
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { 
     getFirestore, 
@@ -8,7 +6,11 @@ import {
     getDoc, 
     updateDoc, 
     increment, 
-    onSnapshot 
+    onSnapshot,
+    collection,
+    getDocs,
+    query,
+    where
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 import { 
@@ -29,6 +31,7 @@ const firebaseConfig = {
   appId: "1:1073914424721:web:dd9fa3f530cd9c74be3e30",
   measurementId: "G-EWQGY2LEFC"
 };
+
 const app = initializeApp(firebaseConfig);
 
 export const db = getFirestore(app);
@@ -43,15 +46,27 @@ export const registerUser = async (email, password) => {
         const userCred = await createUserWithEmailAndPassword(auth, email, password);
         // Create default business doc
         await setDoc(doc(db, "businesses", userCred.user.uid), {
-            name: "",
-            tagline: "",
-            desc: "",
-            address: "",
+            name: "My Business",
+            tagline: "Welcome to my business",
+            desc: "Tell people about your business",
+            address: "Set your location",
             phone: "",
-            email: "",
+            email: email,
             portfolio: [],
-            location: { lat: 0, lng: 0 }
+            location: { lat: 40.7128, lng: -74.0060 },
+            createdAt: new Date().toISOString()
         });
+        
+        // Initialize analytics
+        await setDoc(doc(db, "analytics", userCred.user.uid), {
+            views: 0,
+            scans: 0,
+            maps: 0,
+            contacts: 0,
+            today: 0,
+            week: 0
+        });
+        
         return userCred.user;
     } catch (err) {
         if(err.code === "auth/email-already-in-use") throw new Error("This email is already registered.");
@@ -82,7 +97,7 @@ export const listenAuth = callback => onAuthStateChanged(auth, callback);
 ========================= */
 
 export const saveBusiness = async (uid, data) => {
-    await setDoc(doc(db, "businesses", uid), data);
+    await setDoc(doc(db, "businesses", uid), data, { merge: true });
 };
 
 export const loadBusiness = async (uid) => {
@@ -90,16 +105,72 @@ export const loadBusiness = async (uid) => {
     return snap.exists() ? snap.data() : null;
 };
 
+export const listenBusiness = (uid, callback) => {
+    return onSnapshot(doc(db, "businesses", uid), (snap) => {
+        if (snap.exists()) {
+            callback(snap.data());
+        }
+    });
+};
+
+export const getAllBusinesses = async () => {
+    const querySnapshot = await getDocs(collection(db, "businesses"));
+    const businesses = [];
+    querySnapshot.forEach((doc) => {
+        businesses.push({
+            id: doc.id,
+            ...doc.data()
+        });
+    });
+    return businesses;
+};
+
+export const listenAllBusinesses = (callback) => {
+    return onSnapshot(collection(db, "businesses"), (snapshot) => {
+        const businesses = [];
+        snapshot.forEach((doc) => {
+            businesses.push({
+                id: doc.id,
+                ...doc.data()
+            });
+        });
+        callback(businesses);
+    });
+};
+
 /* =========================
    ANALYTICS
 ========================= */
 
 export const logActivity = async (uid, type) => {
+    if (!uid) return;
     const ref = doc(db, "analytics", uid);
-    await updateDoc(ref, { [type]: increment(1) }).catch(() => 
-        setDoc(ref, { views:0, scans:0, maps:0, contacts:0, [type]:1 })
-    );
+    const today = new Date().toDateString();
+    
+    try {
+        await updateDoc(ref, { 
+            [type]: increment(1),
+            [today]: increment(1)
+        });
+    } catch {
+        await setDoc(ref, { 
+            views: 0, 
+            scans: 0, 
+            maps: 0, 
+            contacts: 0,
+            [type]: 1,
+            [today]: 1
+        });
+    }
 };
 
-export const listenAnalytics = (uid, callback) => 
-    onSnapshot(doc(db, "analytics", uid), snap => snap.exists() && callback(snap.data()));
+export const listenAnalytics = (uid, callback) => {
+    if (!uid) return;
+    return onSnapshot(doc(db, "analytics", uid), snap => {
+        if (snap.exists()) {
+            callback(snap.data());
+        } else {
+            callback({ views: 0, scans: 0, maps: 0, contacts: 0 });
+        }
+    });
+};
