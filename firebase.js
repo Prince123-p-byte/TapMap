@@ -93,7 +93,7 @@ export const loginUser = async (email, password) => {
 
 export const logoutUser = () => signOut(auth);
 
-export const listenAuth = callback => onAuthStateChanged(auth, callback);
+export const listenAuth = (callback) => onAuthStateChanged(auth, callback);
 
 export const deleteUserAccount = async (user) => {
     try {
