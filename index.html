@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TapMap | Business Discovery Platform</title>
     
-    <!-- Tailwind CSS - Development only, replace in production -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
     <!-- Leaflet CSS -->
@@ -19,11 +19,6 @@
     
     <!-- Font -->
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
-    <style>
-        /* Tailwind CDN warning fix - this is just for demo */
-        .tailwind-warning { display: none; }
-    </style>
 </head>
 <body class="text-slate-900 overflow-hidden">
     <!-- AUTH MODAL -->
@@ -48,7 +43,7 @@
                     <input type="password" id="authPassword" autocomplete="current-password" required minlength="6" class="w-full px-4 py-3 rounded-xl border focus:ring-2 focus:ring-indigo-500 outline-none">
                 </div>
                 
-                <div id="authError" class="text-red-500 text-sm hidden"></div>
+                <div id="authError" class="text-red-500 text-sm hidden p-3 bg-red-50 rounded-xl"></div>
                 
                 <button type="submit" id="loginBtn" class="w-full gradient-btn text-white py-3 rounded-xl font-semibold hover:shadow-lg transition-all">
                     Sign In
@@ -85,14 +80,14 @@
             <div class="flex items-center gap-2">
                 <!-- View Toggle -->
                 <div class="flex bg-slate-100 p-1 rounded-full border mr-2">
-                    <button onclick="window.switchView('dashboard')" id="toggleDashboard" class="px-4 py-1.5 rounded-full text-sm font-semibold transition-all bg-white text-indigo-600 shadow-sm">Dashboard</button>
-                    <button onclick="window.switchView('editor')" id="toggleEditor" class="px-4 py-1.5 rounded-full text-sm font-semibold transition-all text-slate-500">Editor</button>
-                    <button onclick="window.switchView('analytics')" id="toggleAnalytics" class="px-4 py-1.5 rounded-full text-sm font-semibold transition-all text-slate-500">Analytics</button>
+                    <button onclick="switchView('dashboard')" id="toggleDashboard" class="px-4 py-1.5 rounded-full text-sm font-semibold transition-all bg-white text-indigo-600 shadow-sm">Dashboard</button>
+                    <button onclick="switchView('editor')" id="toggleEditor" class="px-4 py-1.5 rounded-full text-sm font-semibold transition-all text-slate-500">Editor</button>
+                    <button onclick="switchView('analytics')" id="toggleAnalytics" class="px-4 py-1.5 rounded-full text-sm font-semibold transition-all text-slate-500">Analytics</button>
                 </div>
 
                 <!-- Notification Bell -->
                 <div class="relative">
-                    <button onclick="window.toggleNotifications()" class="w-10 h-10 rounded-full bg-white border flex items-center justify-center text-slate-600 hover:bg-slate-50 transition-colors relative">
+                    <button onclick="toggleNotifications()" class="w-10 h-10 rounded-full bg-white border flex items-center justify-center text-slate-600 hover:bg-slate-50 transition-colors relative">
                         <i data-lucide="bell" class="w-5 h-5"></i>
                         <span id="notifBadge" class="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center hidden">0</span>
                     </button>
@@ -101,7 +96,7 @@
                     <div id="notificationDropdown" class="absolute right-0 mt-3 w-80 bg-white rounded-2xl border shadow-2xl z-[110] hidden overflow-hidden">
                         <div class="p-4 border-b bg-slate-50 flex justify-between items-center">
                             <h3 class="font-bold">Notifications</h3>
-                            <button onclick="window.clearNotifications()" class="text-xs text-indigo-600 font-medium hover:underline">Clear all</button>
+                            <button onclick="clearNotifications()" class="text-xs text-indigo-600 font-medium hover:underline">Clear all</button>
                         </div>
                         <div id="notificationList" class="max-h-96 overflow-y-auto py-2">
                             <div class="p-8 text-center text-slate-400">
@@ -114,7 +109,7 @@
 
                 <!-- Profile Dropdown -->
                 <div class="relative">
-                    <button onclick="window.toggleProfileMenu()" class="w-10 h-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white flex items-center justify-center font-bold hover:shadow-lg transition-shadow">
+                    <button onclick="toggleProfileMenu()" class="w-10 h-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white flex items-center justify-center font-bold hover:shadow-lg transition-shadow">
                         <span id="profileInitial">B</span>
                     </button>
 
@@ -150,12 +145,12 @@
                         
                         <!-- Menu Items -->
                         <div class="p-2">
-                            <button onclick="window.viewMyProfile()" class="w-full px-4 py-3 text-left hover:bg-slate-50 rounded-xl transition-colors flex items-center gap-3">
+                            <button onclick="viewMyProfile()" class="w-full px-4 py-3 text-left hover:bg-slate-50 rounded-xl transition-colors flex items-center gap-3">
                                 <i data-lucide="user" class="w-5 h-5 text-slate-400"></i>
                                 <span class="text-sm font-medium">My Profile</span>
                             </button>
                             <div class="border-t my-2"></div>
-                            <button onclick="window.logout()" class="w-full px-4 py-3 text-left hover:bg-red-50 rounded-xl transition-colors flex items-center gap-3 text-red-600">
+                            <button onclick="logout()" class="w-full px-4 py-3 text-left hover:bg-red-50 rounded-xl transition-colors flex items-center gap-3 text-red-600">
                                 <i data-lucide="log-out" class="w-5 h-5"></i>
                                 <span class="text-sm font-medium">Logout</span>
                             </button>
@@ -225,10 +220,10 @@
 
                     <!-- Quick Actions -->
                     <div class="p-4 bg-slate-50 border-t">
-                        <button onclick="window.openShareModal()" class="w-full bg-white py-3 rounded-xl text-sm font-medium border hover:bg-slate-100 transition-colors flex items-center justify-center gap-2 mb-2">
+                        <button onclick="openShareModal()" class="w-full bg-white py-3 rounded-xl text-sm font-medium border hover:bg-slate-100 transition-colors flex items-center justify-center gap-2 mb-2">
                             <i data-lucide="qr-code" class="w-4 h-4"></i> My QR Code
                         </button>
-                        <button onclick="window.syncToRealTimeLocation()" class="w-full bg-indigo-600 text-white py-3 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2">
+                        <button onclick="syncToRealTimeLocation()" class="w-full bg-indigo-600 text-white py-3 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2">
                             <i data-lucide="locate" class="w-4 h-4"></i> Find My Location
                         </button>
                     </div>
@@ -267,11 +262,11 @@
                                 <i data-lucide="camera" class="w-12 h-12 text-slate-400 mb-2"></i>
                                 <p class="text-sm text-slate-500">Add cover photo</p>
                             </div>
-                            <input type="file" id="coverInput" class="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" onchange="window.handleCoverUpload(event)">
+                            <input type="file" id="coverInput" class="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" onchange="handleCoverUpload(event)">
                             
                             <!-- Profile Picture Overlay -->
                             <div class="absolute -bottom-12 left-6">
-                                <div class="relative w-24 h-24 rounded-2xl border-4 border-white bg-gradient-to-br from-indigo-500 to-purple-500 shadow-lg flex items-center justify-center text-white cursor-pointer group" onclick="window.uploadProfilePicture()">
+                                <div class="relative w-24 h-24 rounded-2xl border-4 border-white bg-gradient-to-br from-indigo-500 to-purple-500 shadow-lg flex items-center justify-center text-white cursor-pointer group" onclick="uploadProfilePicture()">
                                     <i data-lucide="store" class="w-12 h-12"></i>
                                     <div class="absolute inset-0 bg-black/50 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                         <i data-lucide="camera" class="w-6 h-6 text-white"></i>
@@ -284,13 +279,13 @@
                         <div class="pt-14 pb-5 px-6">
                             <div class="flex justify-between items-start">
                                 <div>
-                                    <input type="text" id="inputName" oninput="window.sync()" placeholder="Business Name" value="" class="text-2xl font-bold bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg px-2 py-1 w-full">
+                                    <input type="text" id="inputName" onkeyup="sync()" onchange="sync()" placeholder="Business Name" value="" class="text-2xl font-bold bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg px-2 py-1 w-full">
                                     <div class="flex items-center gap-2 mt-1">
-                                        <input type="text" id="inputTagline" oninput="window.sync()" placeholder="Tagline" value="" class="text-sm text-slate-500 bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg px-2 py-1">
+                                        <input type="text" id="inputTagline" onkeyup="sync()" onchange="sync()" placeholder="Tagline" value="" class="text-sm text-slate-500 bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg px-2 py-1">
                                         <span class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">Active</span>
                                     </div>
                                 </div>
-                                <button onclick="window.saveBusinessProfile()" class="gradient-btn text-white px-6 py-2.5 rounded-xl font-medium flex items-center gap-2 shadow-lg hover:shadow-xl transition-all">
+                                <button onclick="saveBusinessProfile()" class="gradient-btn text-white px-6 py-2.5 rounded-xl font-medium flex items-center gap-2 shadow-lg hover:shadow-xl transition-all">
                                     <i data-lucide="save" class="w-4 h-4"></i> Save Profile
                                 </button>
                             </div>
@@ -302,7 +297,7 @@
                         <h3 class="font-bold text-lg mb-4 flex items-center gap-2">
                             <i data-lucide="info" class="w-5 h-5 text-indigo-500"></i> About
                         </h3>
-                        <textarea id="inputDesc" oninput="window.sync()" placeholder="Tell people about your business..." rows="4" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none resize-none"></textarea>
+                        <textarea id="inputDesc" onkeyup="sync()" onchange="sync()" placeholder="Tell people about your business..." rows="4" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none resize-none"></textarea>
                     </div>
 
                     <!-- Contact Info -->
@@ -315,13 +310,13 @@
                                 <div class="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center text-green-600">
                                     <i data-lucide="phone" class="w-5 h-5"></i>
                                 </div>
-                                <input type="tel" id="inputPhone" oninput="window.sync()" placeholder="Phone number" value="" class="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                                <input type="tel" id="inputPhone" onkeyup="sync()" onchange="sync()" placeholder="Phone number" value="" class="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
                             </div>
                             <div class="flex items-center gap-4">
                                 <div class="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600">
                                     <i data-lucide="mail" class="w-5 h-5"></i>
                                 </div>
-                                <input type="email" id="inputEmail" oninput="window.sync()" placeholder="Email address" value="" class="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                                <input type="email" id="inputEmail" onkeyup="sync()" onchange="sync()" placeholder="Email address" value="" class="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
                             </div>
                         </div>
                     </div>
@@ -332,7 +327,7 @@
                             <h3 class="font-bold text-lg flex items-center gap-2">
                                 <i data-lucide="map" class="w-5 h-5 text-blue-500"></i> Location
                             </h3>
-                            <button onclick="window.syncToRealTimeLocation()" class="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-medium flex items-center gap-2 hover:bg-slate-800 transition-colors">
+                            <button onclick="syncToRealTimeLocation()" class="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-medium flex items-center gap-2 hover:bg-slate-800 transition-colors">
                                 <i data-lucide="locate" class="w-4 h-4"></i> Use My Location
                             </button>
                         </div>
@@ -340,7 +335,7 @@
                         <!-- Address Input -->
                         <div class="relative mb-4">
                             <i data-lucide="map-pin" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
-                            <input type="text" id="inputAddress" oninput="window.sync()" placeholder="Enter business address" 
+                            <input type="text" id="inputAddress" onkeyup="sync()" onchange="sync()" placeholder="Enter business address" 
                                    value=""
                                    class="w-full pl-9 pr-10 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
                             <div id="addrLoader" class="absolute right-3 top-1/2 -translate-y-1/2 hidden">
@@ -350,10 +345,10 @@
                         
                         <!-- Location Action Buttons -->
                         <div class="flex gap-2 mb-4">
-                            <button onclick="window.openLocationSearch()" class="flex-1 px-4 py-2.5 border rounded-xl text-sm font-medium hover:bg-slate-50 transition-colors flex items-center justify-center gap-2">
+                            <button onclick="openLocationSearch()" class="flex-1 px-4 py-2.5 border rounded-xl text-sm font-medium hover:bg-slate-50 transition-colors flex items-center justify-center gap-2">
                                 <i data-lucide="search" class="w-4 h-4"></i> Search Address
                             </button>
-                            <button onclick="window.syncToRealTimeLocation()" class="flex-1 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2">
+                            <button onclick="syncToRealTimeLocation()" class="flex-1 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2">
                                 <i data-lucide="locate-fixed" class="w-4 h-4"></i> Current Location
                             </button>
                         </div>
@@ -374,7 +369,7 @@
                             <h3 class="font-bold text-lg flex items-center gap-2">
                                 <i data-lucide="layout-grid" class="w-5 h-5 text-pink-500"></i> Portfolio
                             </h3>
-                            <button onclick="window.addPortfolioItem()" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium flex items-center gap-2 hover:bg-indigo-700 transition-colors">
+                            <button onclick="addPortfolioItem()" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium flex items-center gap-2 hover:bg-indigo-700 transition-colors">
                                 <i data-lucide="plus" class="w-4 h-4"></i> Add Photos
                             </button>
                         </div>
@@ -390,7 +385,7 @@
                     <!-- Header -->
                     <div class="flex justify-between items-center">
                         <h2 class="text-2xl font-bold">Analytics Dashboard</h2>
-                        <select id="analyticsTimeframe" onchange="window.updateAnalyticsCharts()" class="px-4 py-2 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                        <select id="analyticsTimeframe" onchange="updateAnalyticsCharts()" class="px-4 py-2 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
                             <option value="today">Today</option>
                             <option value="week" selected>This Week</option>
                             <option value="month">This Month</option>
@@ -476,7 +471,7 @@
     <!-- Profile View Modal -->
     <div id="profileModal" class="fixed inset-0 z-[250] bg-black/70 backdrop-blur-md hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-[2rem] w-full max-w-md p-6 relative shadow-2xl scale-in">
-            <button onclick="window.closeProfileModal()" class="absolute top-6 right-6 text-slate-400 hover:text-slate-600">
+            <button onclick="closeProfileModal()" class="absolute top-6 right-6 text-slate-400 hover:text-slate-600">
                 <i data-lucide="x"></i>
             </button>
             
@@ -515,13 +510,13 @@
     <!-- Share Modal -->
     <div id="shareModal" class="fixed inset-0 z-[200] bg-black/70 backdrop-blur-md hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-[2rem] w-full max-w-sm p-8 text-center relative shadow-2xl scale-in">
-            <button onclick="window.closeShareModal()" class="absolute top-6 right-6 text-slate-400 hover:text-slate-600">
+            <button onclick="closeShareModal()" class="absolute top-6 right-6 text-slate-400 hover:text-slate-600">
                 <i data-lucide="x"></i>
             </button>
             <h2 class="text-2xl font-bold mb-1 gradient-text">Your QR Pass</h2>
             <p class="text-sm text-slate-500 mb-6">Scan to get directions</p>
-            <div id="qrcode-modal" class="inline-block p-4 bg-white rounded-3xl mb-6 border-2 border-slate-100 shadow-lg" onclick="window.simulateScan()"></div>
-            <button onclick="window.downloadQR()" class="w-full gradient-btn text-white py-3.5 rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transition-all">
+            <div id="qrcode-modal" class="inline-block p-4 bg-white rounded-3xl mb-6 border-2 border-slate-100 shadow-lg" onclick="simulateScan()"></div>
+            <button onclick="downloadQR()" class="w-full gradient-btn text-white py-3.5 rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transition-all">
                 <i data-lucide="download" class="w-4 h-4"></i> Download QR Code
             </button>
         </div>
