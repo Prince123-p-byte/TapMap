@@ -9,8 +9,7 @@ import {
     onSnapshot,
     collection,
     getDocs,
-    query,
-    where
+    query
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 import { 
@@ -69,10 +68,11 @@ export const registerUser = async (email, password) => {
         
         return userCred.user;
     } catch (err) {
+        console.error("Registration error:", err);
         if(err.code === "auth/email-already-in-use") throw new Error("This email is already registered.");
         if(err.code === "auth/invalid-email") throw new Error("Invalid email address.");
         if(err.code === "auth/weak-password") throw new Error("Password should be at least 6 characters.");
-        throw err;
+        throw new Error("Registration failed. Please try again.");
     }
 };
 
@@ -81,10 +81,11 @@ export const loginUser = async (email, password) => {
         const userCred = await signInWithEmailAndPassword(auth, email, password);
         return userCred.user;
     } catch(err) {
+        console.error("Login error:", err);
         if(err.code === "auth/user-not-found") throw new Error("No account found with this email.");
         if(err.code === "auth/wrong-password") throw new Error("Incorrect password.");
         if(err.code === "auth/invalid-email") throw new Error("Invalid email address.");
-        throw err;
+        throw new Error("Login failed. Please try again.");
     }
 };
 
@@ -97,12 +98,22 @@ export const listenAuth = callback => onAuthStateChanged(auth, callback);
 ========================= */
 
 export const saveBusiness = async (uid, data) => {
-    await setDoc(doc(db, "businesses", uid), data, { merge: true });
+    try {
+        await setDoc(doc(db, "businesses", uid), data, { merge: true });
+    } catch (error) {
+        console.error("Error saving business:", error);
+        throw error;
+    }
 };
 
 export const loadBusiness = async (uid) => {
-    const snap = await getDoc(doc(db, "businesses", uid));
-    return snap.exists() ? snap.data() : null;
+    try {
+        const snap = await getDoc(doc(db, "businesses", uid));
+        return snap.exists() ? snap.data() : null;
+    } catch (error) {
+        console.error("Error loading business:", error);
+        return null;
+    }
 };
 
 export const listenBusiness = (uid, callback) => {
@@ -110,19 +121,26 @@ export const listenBusiness = (uid, callback) => {
         if (snap.exists()) {
             callback(snap.data());
         }
+    }, (error) => {
+        console.error("Error listening to business:", error);
     });
 };
 
 export const getAllBusinesses = async () => {
-    const querySnapshot = await getDocs(collection(db, "businesses"));
-    const businesses = [];
-    querySnapshot.forEach((doc) => {
-        businesses.push({
-            id: doc.id,
-            ...doc.data()
+    try {
+        const querySnapshot = await getDocs(collection(db, "businesses"));
+        const businesses = [];
+        querySnapshot.forEach((doc) => {
+            businesses.push({
+                id: doc.id,
+                ...doc.data()
+            });
         });
-    });
-    return businesses;
+        return businesses;
+    } catch (error) {
+        console.error("Error getting businesses:", error);
+        return [];
+    }
 };
 
 export const listenAllBusinesses = (callback) => {
@@ -135,6 +153,8 @@ export const listenAllBusinesses = (callback) => {
             });
         });
         callback(businesses);
+    }, (error) => {
+        console.error("Error listening to businesses:", error);
     });
 };
 
@@ -153,14 +173,18 @@ export const logActivity = async (uid, type) => {
             [today]: increment(1)
         });
     } catch {
-        await setDoc(ref, { 
-            views: 0, 
-            scans: 0, 
-            maps: 0, 
-            contacts: 0,
-            [type]: 1,
-            [today]: 1
-        });
+        try {
+            await setDoc(ref, { 
+                views: 0, 
+                scans: 0, 
+                maps: 0, 
+                contacts: 0,
+                [type]: 1,
+                [today]: 1
+            });
+        } catch (error) {
+            console.error("Error logging activity:", error);
+        }
     }
 };
 
@@ -172,5 +196,7 @@ export const listenAnalytics = (uid, callback) => {
         } else {
             callback({ views: 0, scans: 0, maps: 0, contacts: 0 });
         }
+    }, (error) => {
+        console.error("Error listening to analytics:", error);
     });
 };
