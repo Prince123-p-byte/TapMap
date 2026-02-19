@@ -3,7 +3,7 @@ import {
     registerUser, 
     loginUser, 
     logoutUser, 
-    listenAuth,
+    deleteUserAccount,
     saveBusiness,
     loadBusiness,
     listenBusiness,
@@ -23,7 +23,9 @@ let appState = {
     phone: '',
     email: '',
     portfolio: [],
-    location: { lat: 40.7128, lng: -74.0060 }
+    location: { lat: 40.7128, lng: -74.0060 },
+    profileImage: null,
+    coverImage: null
 };
 
 let businesses = [];
@@ -149,6 +151,14 @@ async function handleAuthChange(user) {
             const businessData = await loadBusiness(user.uid);
             if (businessData) {
                 appState = { ...appState, ...businessData, id: user.uid };
+            } else {
+                // Initialize with default values if no data exists
+                appState = {
+                    ...appState,
+                    id: user.uid,
+                    email: user.email,
+                    name: user.email.split('@')[0] || 'My Business'
+                };
             }
             
             // Initialize app
@@ -179,7 +189,7 @@ async function handleAuthChange(user) {
             sync();
             renderPortfolioGrid();
             
-            // Set profile initial
+            // Set profile initial with proper letter
             updateProfileDisplay();
             
             // Listen to business updates
@@ -190,6 +200,7 @@ async function handleAuthChange(user) {
                     sync();
                     renderPortfolioGrid();
                     updateDashboardMarker();
+                    updateProfileDisplay(); // Update profile initial when data changes
                 }
             });
             
@@ -202,7 +213,7 @@ async function handleAuthChange(user) {
                 }
             });
             
-            // Listen to all businesses
+            // Listen to all businesses (show ALL businesses, not just active)
             if (unsubscribeAllBusinesses) unsubscribeAllBusinesses();
             unsubscribeAllBusinesses = listenAllBusinesses((allBusinesses) => {
                 if (allBusinesses) {
@@ -265,7 +276,9 @@ async function handleAuthChange(user) {
             phone: '',
             email: '',
             portfolio: [],
-            location: { lat: 40.7128, lng: -74.0060 }
+            location: { lat: 40.7128, lng: -74.0060 },
+            profileImage: null,
+            coverImage: null
         };
         
         businesses = [];
@@ -280,7 +293,12 @@ async function handleAuthChange(user) {
 }
 
 function updateProfileDisplay() {
-    const initial = appState.name ? appState.name.charAt(0).toUpperCase() : 'B';
+    // Get the first letter from business name, or use 'B' as fallback
+    const initial = appState.name && appState.name.trim() !== '' 
+        ? appState.name.charAt(0).toUpperCase() 
+        : (currentUser?.email ? currentUser.email.charAt(0).toUpperCase() : 'B');
+    
+    console.log('Updating profile initial to:', initial, 'from name:', appState.name);
     
     const profileInitial = document.getElementById('profileInitial');
     const profileMenuInitial = document.getElementById('profileMenuInitial');
@@ -338,12 +356,40 @@ function viewMyProfile() {
     const modal = document.getElementById('profileModal');
     if (!modal) return;
     
+    // Update profile modal with all business details
     document.getElementById('profileModalName').innerText = appState.name || 'Your Business';
     document.getElementById('profileModalTagline').innerText = appState.tagline || '';
     document.getElementById('profileModalDesc').innerText = appState.desc || 'No description yet';
     document.getElementById('profileModalPhone').innerText = appState.phone || 'Not provided';
     document.getElementById('profileModalEmail').innerText = appState.email || 'Not provided';
     document.getElementById('profileModalAddress').innerText = appState.address || 'Not set';
+    
+    // Handle profile image
+    const iconEl = document.getElementById('profileModalIcon');
+    const imgEl = document.getElementById('profileModalImg');
+    
+    if (appState.profileImage) {
+        iconEl.classList.add('hidden');
+        imgEl.classList.remove('hidden');
+        imgEl.src = appState.profileImage;
+    } else {
+        iconEl.classList.remove('hidden');
+        imgEl.classList.add('hidden');
+    }
+    
+    // Load portfolio images
+    const portfolioGrid = document.getElementById('profileModalPortfolio');
+    if (portfolioGrid) {
+        if (appState.portfolio && appState.portfolio.length > 0) {
+            portfolioGrid.innerHTML = appState.portfolio.slice(0, 3).map(item => `
+                <div class="aspect-square rounded-lg overflow-hidden bg-slate-100">
+                    <img src="${item.image}" alt="${item.name}" class="w-full h-full object-cover">
+                </div>
+            `).join('');
+        } else {
+            portfolioGrid.innerHTML = '<p class="text-xs text-slate-400 col-span-3 text-center py-2">No portfolio items</p>';
+        }
+    }
     
     modal.classList.remove('hidden');
 }
@@ -357,6 +403,33 @@ async function logout() {
     toggleProfileMenu();
     showLoading(true);
     await logoutUser();
+    showLoading(false);
+}
+
+// ==================== DELETE ACCOUNT FUNCTIONS ====================
+function openDeleteModal() {
+    toggleProfileMenu();
+    const modal = document.getElementById('deleteModal');
+    if (modal) modal.classList.remove('hidden');
+}
+
+function closeDeleteModal() {
+    const modal = document.getElementById('deleteModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function confirmDelete() {
+    closeDeleteModal();
+    showLoading(true);
+    
+    try {
+        await deleteUserAccount(currentUser);
+        showToast('Account deleted successfully', 'success');
+    } catch (error) {
+        console.error('Error deleting account:', error);
+        showToast('Error deleting account', 'error');
+    }
+    
     showLoading(false);
 }
 
@@ -389,7 +462,7 @@ function initDashboardMap() {
         }, true);
     }
 
-    // Add other business markers
+    // Add all other business markers (not just active ones)
     if (businesses && businesses.length > 0) {
         businesses.forEach(business => {
             if (business.location && business.location.lat) {
@@ -448,11 +521,15 @@ function addBusinessMarker(business, isCurrent = false) {
         <div class="text-center min-w-[150px]">
             <h3 class="font-bold text-indigo-600">${business.name || 'Your Business'}</h3>
             <p class="text-xs text-slate-500 mt-1">${business.address || 'Location set'}</p>
+            ${business.phone ? `<p class="text-xs text-slate-500 mt-1">📞 ${business.phone}</p>` : ''}
+            ${business.email ? `<p class="text-xs text-slate-500 mt-1">✉️ ${business.email}</p>` : ''}
         </div>
     ` : `
         <div class="text-center min-w-[150px]">
             <h3 class="font-bold">${business.name || 'Business'}</h3>
             <p class="text-xs text-slate-500 mt-1">${business.address || 'Location set'}</p>
+            ${business.phone ? `<p class="text-xs text-slate-500 mt-1">📞 ${business.phone}</p>` : ''}
+            ${business.email ? `<p class="text-xs text-slate-500 mt-1">✉️ ${business.email}</p>` : ''}
         </div>
     `;
 
@@ -476,7 +553,7 @@ function updateBusinessMarkers() {
     
     businessMarkers = businessMarkers.filter(m => m.isCurrent);
     
-    // Add new business markers
+    // Add all business markers
     if (businesses && businesses.length > 0) {
         businesses.forEach(business => {
             if (business.location && business.location.lat) {
@@ -501,6 +578,8 @@ function updateBusinessPopup() {
             <div class="text-center min-w-[150px]">
                 <h3 class="font-bold text-indigo-600">${appState.name || 'Your Business'}</h3>
                 <p class="text-xs text-slate-500 mt-1">${appState.address || 'Location set'}</p>
+                ${appState.phone ? `<p class="text-xs text-slate-500 mt-1">📞 ${appState.phone}</p>` : ''}
+                ${appState.email ? `<p class="text-xs text-slate-500 mt-1">✉️ ${appState.email}</p>` : ''}
             </div>
         `);
     }
@@ -697,12 +776,20 @@ function renderBusinessList() {
     list.innerHTML = businesses.map(business => `
         <div class="p-4 border-b hover:bg-slate-50 transition-colors cursor-pointer" onclick="focusOnBusiness('${business.id}')">
             <div class="flex gap-3">
-                <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-xl">
-                    <i data-lucide="store" class="w-8 h-8"></i>
+                <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-xl overflow-hidden">
+                    ${business.profileImage 
+                        ? `<img src="${business.profileImage}" class="w-full h-full object-cover">` 
+                        : `<i data-lucide="store" class="w-8 h-8"></i>`
+                    }
                 </div>
                 <div class="flex-1">
                     <h3 class="font-bold">${business.name || 'Business'}</h3>
                     <p class="text-xs text-slate-500 mt-1">${business.address || 'Location not set'}</p>
+                    <div class="flex gap-2 mt-2">
+                        ${business.phone ? `<span class="text-xs text-slate-400">📞</span>` : ''}
+                        ${business.email ? `<span class="text-xs text-slate-400">✉️</span>` : ''}
+                        ${business.portfolio?.length ? `<span class="text-xs text-slate-400">📸 ${business.portfolio.length}</span>` : ''}
+                    </div>
                 </div>
             </div>
         </div>
@@ -1026,7 +1113,9 @@ async function saveBusinessProfile() {
             phone: appState.phone,
             email: appState.email,
             portfolio: appState.portfolio,
-            location: appState.location
+            location: appState.location,
+            profileImage: appState.profileImage,
+            coverImage: appState.coverImage
         });
         
         showToast('Profile saved!', 'success');
@@ -1056,6 +1145,7 @@ function handleCoverUpload(event) {
         if (coverPreview) {
             coverPreview.src = e.target.result;
             coverPreview.classList.remove('hidden');
+            appState.coverImage = e.target.result;
         }
         if (coverText) coverText.classList.add('hidden');
         
@@ -1083,8 +1173,10 @@ function uploadProfilePicture() {
             const profileIcon = document.querySelector('.w-24.h-24.rounded-2xl.border-4.border-white');
             if (profileIcon) {
                 profileIcon.innerHTML = `<img src="${event.target.result}" class="w-full h-full object-cover rounded-2xl">`;
+                appState.profileImage = event.target.result;
             }
             showToast('Profile picture updated!', 'success');
+            updateProfileDisplay(); // Update initial after profile pic upload
         };
         reader.readAsDataURL(file);
     };
@@ -1310,6 +1402,9 @@ window.toggleProfileMenu = toggleProfileMenu;
 window.viewMyProfile = viewMyProfile;
 window.closeProfileModal = closeProfileModal;
 window.logout = logout;
+window.openDeleteModal = openDeleteModal;
+window.closeDeleteModal = closeDeleteModal;
+window.confirmDelete = confirmDelete;
 window.openShareModal = openShareModal;
 window.closeShareModal = closeShareModal;
 window.downloadQR = downloadQR;
