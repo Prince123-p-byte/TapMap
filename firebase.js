@@ -8,8 +8,7 @@ import {
     increment, 
     onSnapshot,
     collection,
-    getDocs,
-    query
+    deleteDoc
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 import { 
@@ -17,7 +16,8 @@ import {
     createUserWithEmailAndPassword, 
     signInWithEmailAndPassword, 
     signOut, 
-    onAuthStateChanged 
+    onAuthStateChanged,
+    deleteUser
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
 // --- FIREBASE CONFIG ---
@@ -45,7 +45,7 @@ export const registerUser = async (email, password) => {
         const userCred = await createUserWithEmailAndPassword(auth, email, password);
         // Create default business doc
         await setDoc(doc(db, "businesses", userCred.user.uid), {
-            name: "My Business",
+            name: email.split('@')[0] || "My Business",
             tagline: "Welcome to my business",
             desc: "Tell people about your business",
             address: "Set your location",
@@ -53,7 +53,9 @@ export const registerUser = async (email, password) => {
             email: email,
             portfolio: [],
             location: { lat: 40.7128, lng: -74.0060 },
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            profileImage: null,
+            coverImage: null
         });
         
         // Initialize analytics
@@ -93,6 +95,20 @@ export const logoutUser = () => signOut(auth);
 
 export const listenAuth = callback => onAuthStateChanged(auth, callback);
 
+export const deleteUserAccount = async (user) => {
+    try {
+        // Delete business data from Firestore
+        await deleteDoc(doc(db, "businesses", user.uid));
+        await deleteDoc(doc(db, "analytics", user.uid));
+        
+        // Delete the user account
+        await deleteUser(user);
+    } catch (error) {
+        console.error("Error deleting account:", error);
+        throw error;
+    }
+};
+
 /* =========================
    BUSINESS FUNCTIONS
 ========================= */
@@ -124,23 +140,6 @@ export const listenBusiness = (uid, callback) => {
     }, (error) => {
         console.error("Error listening to business:", error);
     });
-};
-
-export const getAllBusinesses = async () => {
-    try {
-        const querySnapshot = await getDocs(collection(db, "businesses"));
-        const businesses = [];
-        querySnapshot.forEach((doc) => {
-            businesses.push({
-                id: doc.id,
-                ...doc.data()
-            });
-        });
-        return businesses;
-    } catch (error) {
-        console.error("Error getting businesses:", error);
-        return [];
-    }
 };
 
 export const listenAllBusinesses = (callback) => {
