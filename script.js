@@ -7,7 +7,6 @@ import {
     saveBusiness,
     loadBusiness,
     listenBusiness,
-    getAllBusinesses,
     listenAllBusinesses,
     logActivity,
     listenAnalytics
@@ -139,12 +138,13 @@ function showLoading(show) {
 
 async function handleAuthChange(user) {
     console.log('Auth state changed:', user ? 'logged in' : 'logged out');
-    showLoading(true);
     
     if (user) {
         currentUser = user;
         
         try {
+            showLoading(true);
+            
             // Load user business data
             const businessData = await loadBusiness(user.uid);
             if (businessData) {
@@ -158,7 +158,12 @@ async function handleAuthChange(user) {
             if (authSection) authSection.classList.add('hidden');
             if (app) app.classList.remove('hidden');
             
-            // Initialize maps (with timeout to ensure DOM is ready)
+            // Initialize icons again
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+            
+            // Initialize maps
             setTimeout(() => {
                 initDashboardMap();
                 initEditorMap();
@@ -229,6 +234,12 @@ async function handleAuthChange(user) {
         if (app) app.classList.add('hidden');
         if (authSection) authSection.classList.remove('hidden');
         
+        // Clear form
+        const emailInput = document.getElementById('authEmail');
+        const passwordInput = document.getElementById('authPassword');
+        if (emailInput) emailInput.value = '';
+        if (passwordInput) passwordInput.value = '';
+        
         // Clean up listeners
         if (unsubscribeBusiness) unsubscribeBusiness();
         if (unsubscribeAnalytics) unsubscribeAnalytics();
@@ -244,7 +255,27 @@ async function handleAuthChange(user) {
             editorMap = null;
         }
         
-        showLoading(false);
+        // Reset state
+        appState = {
+            id: null,
+            name: '',
+            tagline: '',
+            desc: '',
+            address: '',
+            phone: '',
+            email: '',
+            portfolio: [],
+            location: { lat: 40.7128, lng: -74.0060 }
+        };
+        
+        businesses = [];
+        stats = {
+            views: 0,
+            scans: 0,
+            maps: 0,
+            contacts: 0,
+            today: 0
+        };
     }
 }
 
@@ -264,7 +295,9 @@ function updateProfileDisplay() {
 
 // ==================== SYNC FUNCTIONS ====================
 function sync() {
-    // Update input fields safely
+    if (!currentUser) return;
+    
+    // Update appState from inputs
     const inputName = document.getElementById('inputName');
     const inputTagline = document.getElementById('inputTagline');
     const inputDesc = document.getElementById('inputDesc');
@@ -272,14 +305,14 @@ function sync() {
     const inputPhone = document.getElementById('inputPhone');
     const inputEmail = document.getElementById('inputEmail');
     
-    if (inputName) inputName.value = appState.name || '';
-    if (inputTagline) inputTagline.value = appState.tagline || '';
-    if (inputDesc) inputDesc.value = appState.desc || '';
-    if (inputAddress) inputAddress.value = appState.address || '';
-    if (inputPhone) inputPhone.value = appState.phone || '';
-    if (inputEmail) inputEmail.value = appState.email || '';
+    if (inputName) appState.name = inputName.value;
+    if (inputTagline) appState.tagline = inputTagline.value;
+    if (inputDesc) appState.desc = inputDesc.value;
+    if (inputAddress) appState.address = inputAddress.value;
+    if (inputPhone) appState.phone = inputPhone.value;
+    if (inputEmail) appState.email = inputEmail.value;
 
-    // Update dashboard displays safely
+    // Update dashboard displays
     const businessNameDisplay = document.getElementById('businessNameDisplay');
     const businessAddressDisplay = document.getElementById('businessAddressDisplay');
     
@@ -293,7 +326,10 @@ function sync() {
 // ==================== PROFILE MENU FUNCTIONS ====================
 function toggleProfileMenu() {
     const menu = document.getElementById('profileMenu');
-    if (menu) menu.classList.toggle('hidden');
+    if (menu) {
+        menu.classList.toggle('hidden');
+        console.log('Profile menu toggled:', !menu.classList.contains('hidden'));
+    }
 }
 
 function viewMyProfile() {
@@ -302,19 +338,12 @@ function viewMyProfile() {
     const modal = document.getElementById('profileModal');
     if (!modal) return;
     
-    const nameEl = document.getElementById('profileModalName');
-    const taglineEl = document.getElementById('profileModalTagline');
-    const descEl = document.getElementById('profileModalDesc');
-    const phoneEl = document.getElementById('profileModalPhone');
-    const emailEl = document.getElementById('profileModalEmail');
-    const addressEl = document.getElementById('profileModalAddress');
-    
-    if (nameEl) nameEl.innerText = appState.name || 'Your Business';
-    if (taglineEl) taglineEl.innerText = appState.tagline || '';
-    if (descEl) descEl.innerText = appState.desc || 'No description yet';
-    if (phoneEl) phoneEl.innerText = appState.phone || 'Not provided';
-    if (emailEl) emailEl.innerText = appState.email || 'Not provided';
-    if (addressEl) addressEl.innerText = appState.address || 'Not set';
+    document.getElementById('profileModalName').innerText = appState.name || 'Your Business';
+    document.getElementById('profileModalTagline').innerText = appState.tagline || '';
+    document.getElementById('profileModalDesc').innerText = appState.desc || 'No description yet';
+    document.getElementById('profileModalPhone').innerText = appState.phone || 'Not provided';
+    document.getElementById('profileModalEmail').innerText = appState.email || 'Not provided';
+    document.getElementById('profileModalAddress').innerText = appState.address || 'Not set';
     
     modal.classList.remove('hidden');
 }
@@ -388,6 +417,10 @@ function initEditorMap() {
         attribution: '© OpenStreetMap'
     }).addTo(editorMap);
 
+    if (marker) {
+        marker.remove();
+    }
+    
     marker = L.marker([appState.location.lat, appState.location.lng], { draggable: true }).addTo(editorMap);
     marker.on('dragend', async (e) => {
         const pos = e.target.getLatLng();
@@ -548,7 +581,7 @@ function openLocationSearch() {
                 }
                 
                 results.innerHTML = data.map(place => `
-                    <div onclick="window.selectAddress('${place.display_name.replace(/'/g, "\\'")}', ${place.lat}, ${place.lon})" class="p-3 hover:bg-slate-50 rounded-xl cursor-pointer border transition-all">
+                    <div onclick="selectAddress('${place.display_name.replace(/'/g, "\\'")}', ${place.lat}, ${place.lon})" class="p-3 hover:bg-slate-50 rounded-xl cursor-pointer border transition-all">
                         <p class="font-medium">${place.display_name}</p>
                     </div>
                 `).join('');
@@ -565,7 +598,10 @@ function selectAddress(address, lat, lng) {
     if (modal) modal.remove();
     
     const inputAddress = document.getElementById('inputAddress');
-    if (inputAddress) inputAddress.value = address;
+    if (inputAddress) {
+        inputAddress.value = address;
+        appState.address = address;
+    }
     
     appState.location = { lat: parseFloat(lat), lng: parseFloat(lng) };
     
@@ -629,8 +665,10 @@ async function reverseGeocode(lat, lng) {
         const addr = data.display_name || "Location set";
         
         const inputAddress = document.getElementById('inputAddress');
-        if (inputAddress) inputAddress.value = addr;
-        appState.address = addr;
+        if (inputAddress) {
+            inputAddress.value = addr;
+            appState.address = addr;
+        }
     } catch (e) {
         console.error('Geocoding failed:', e);
     }
@@ -657,7 +695,7 @@ function renderBusinessList() {
     }
     
     list.innerHTML = businesses.map(business => `
-        <div class="p-4 border-b hover:bg-slate-50 transition-colors cursor-pointer" onclick="window.focusOnBusiness('${business.id}')">
+        <div class="p-4 border-b hover:bg-slate-50 transition-colors cursor-pointer" onclick="focusOnBusiness('${business.id}')">
             <div class="flex gap-3">
                 <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-xl">
                     <i data-lucide="store" class="w-8 h-8"></i>
@@ -679,6 +717,9 @@ function renderBusinessList() {
 function initQRCode() {
     const qrElement = document.getElementById("qrcode-modal");
     if (!qrElement) return;
+    
+    // Clear existing QR code
+    qrElement.innerHTML = '';
     
     const link = `https://www.google.com/maps/search/?api=1&query=${appState.location.lat},${appState.location.lng}`;
     
@@ -839,16 +880,16 @@ function renderPortfolioGrid() {
             <div class="portfolio-item-overlay">
                 <div class="w-full space-y-2">
                     <input type="text" value="${item.name}" 
-                           onchange="window.updatePortfolioName(${item.id}, this.value)"
+                           onchange="updatePortfolioName(${item.id}, this.value)"
                            class="w-full bg-transparent text-white font-medium text-sm border-b border-white/50 focus:outline-none focus:border-white px-1 py-0.5"
                            placeholder="Item name">
-                    <button onclick="window.triggerPortfolioUpload(${item.id})" 
+                    <button onclick="triggerPortfolioUpload(${item.id})" 
                             class="w-full text-xs bg-white/20 backdrop-blur-sm text-white py-1 rounded-full hover:bg-white/30 transition-colors">
                         Change Image
                     </button>
                 </div>
             </div>
-            <button onclick="window.removePortfolioItem(${item.id})" 
+            <button onclick="removePortfolioItem(${item.id})" 
                     class="absolute top-2 right-2 w-8 h-8 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-lg hover:bg-red-600">
                 <i data-lucide="trash-2" class="w-4 h-4"></i>
             </button>
@@ -881,6 +922,7 @@ function initCharts() {
     const activityCtx = document.getElementById('activityChart')?.getContext('2d');
     
     if (viewsCtx && typeof Chart !== 'undefined') {
+        if (viewsChart) viewsChart.destroy();
         viewsChart = new Chart(viewsCtx, {
             type: 'line',
             data: {
@@ -905,6 +947,7 @@ function initCharts() {
     }
 
     if (activityCtx && typeof Chart !== 'undefined') {
+        if (activityChart) activityChart.destroy();
         activityChart = new Chart(activityCtx, {
             type: 'doughnut',
             data: {
@@ -1138,6 +1181,8 @@ function updateStats() {
             activityDiv.innerHTML = activities.map(a => 
                 `<div class="p-2 bg-slate-50 rounded-lg text-sm">${a}</div>`
             ).join('');
+        } else {
+            activityDiv.innerHTML = '<p class="text-sm text-slate-500 text-center py-4">No activity yet</p>';
         }
     }
 }
@@ -1147,6 +1192,7 @@ function toggleNotifications() {
     const drop = document.getElementById('notificationDropdown');
     if (drop) {
         drop.classList.toggle('hidden');
+        console.log('Notifications toggled:', !drop.classList.contains('hidden'));
         if (!drop.classList.contains('hidden')) {
             const badge = document.getElementById('notifBadge');
             if (badge) badge.classList.add('hidden');
@@ -1222,7 +1268,7 @@ function showToast(message, type = 'info') {
     const color = type === 'success' ? 'text-emerald-500 bg-emerald-50' : 
                   type === 'error' ? 'text-red-500 bg-red-50' : 'text-indigo-500 bg-indigo-50';
     
-    toast.className = `toast-enter flex items-center gap-3 px-5 py-3 rounded-full shadow-xl bg-white border pointer-events-auto`;
+    toast.className = `toast-enter flex items-center gap-3 px-5 py-3 rounded-full shadow-xl bg-white border pointer-events-auto mb-2`;
     toast.innerHTML = `
         <div class="w-6 h-6 rounded-full flex items-center justify-center ${color}">
             <i data-lucide="${icon}" class="w-4 h-4"></i>
