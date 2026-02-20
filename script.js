@@ -10,7 +10,9 @@ import {
     listenAllBusinesses,
     logActivity,
     listenAnalytics,
-    listenAuth  // This was missing!
+    listenAuth,
+    sendMessage,
+    listenForMessages
 } from './firebase.js';
 
 // ==================== GLOBAL STATE ====================
@@ -30,8 +32,9 @@ let appState = {
 };
 
 let businesses = [];
+let filteredBusinesses = [];
 let dashboardMap, editorMap, marker, businessMarkers = [];
-let qrcodeModal;
+let qrcodeModal, popupQRCode;
 let notifications = [];
 let stats = {
     views: 0,
@@ -45,6 +48,7 @@ let viewsChart, activityChart;
 let unsubscribeBusiness = null;
 let unsubscribeAnalytics = null;
 let unsubscribeAllBusinesses = null;
+let currentPopupBusiness = null;
 
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', () => {
@@ -69,6 +73,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Setup search functionality
+    setupSearch();
+
     // Setup auth form
     setupAuthForm();
 
@@ -78,7 +85,46 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
         console.error('listenAuth is not defined');
     }
+
+    // Check for business ID in URL (for QR code deep linking)
+    checkUrlForBusinessId();
 });
+
+function setupSearch() {
+    const searchInput = document.getElementById('businessSearch');
+    if (!searchInput) return;
+    
+    searchInput.addEventListener('input', debounce((e) => {
+        const searchTerm = e.target.value.toLowerCase().trim();
+        
+        if (!searchTerm) {
+            filteredBusinesses = [...businesses];
+        } else {
+            filteredBusinesses = businesses.filter(business => 
+                (business.name && business.name.toLowerCase().includes(searchTerm)) ||
+                (business.tagline && business.tagline.toLowerCase().includes(searchTerm)) ||
+                (business.desc && business.desc.toLowerCase().includes(searchTerm)) ||
+                (business.address && business.address.toLowerCase().includes(searchTerm))
+            );
+        }
+        
+        renderBusinessList();
+    }, 300));
+}
+
+function checkUrlForBusinessId() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const businessId = urlParams.get('business');
+    
+    if (businessId && businesses.length > 0) {
+        const business = businesses.find(b => b.id === businessId);
+        if (business) {
+            setTimeout(() => {
+                showBusinessPopup(business);
+            }, 1000);
+        }
+    }
+}
 
 function setupAuthForm() {
     const authForm = document.getElementById('authForm');
@@ -182,13 +228,14 @@ async function handleAuthChange(user) {
                 initEditorMap();
             }, 100);
             
-            // Initialize QR code
+            // Initialize QR codes
             initQRCode();
+            initPopupQRCode();
             
             // Initialize charts
             initCharts();
             
-            // Sync UI with state
+            // Sync UI with state (this will populate editor fields)
             sync();
             renderPortfolioGrid();
             
@@ -203,7 +250,7 @@ async function handleAuthChange(user) {
                     sync();
                     renderPortfolioGrid();
                     updateDashboardMarker();
-                    updateProfileDisplay(); // Update profile initial when data changes
+                    updateProfileDisplay();
                 }
             });
             
@@ -216,13 +263,17 @@ async function handleAuthChange(user) {
                 }
             });
             
-            // Listen to all businesses (show ALL businesses, not just active)
+            // Listen to all businesses
             if (unsubscribeAllBusinesses) unsubscribeAllBusinesses();
             unsubscribeAllBusinesses = listenAllBusinesses((allBusinesses) => {
                 if (allBusinesses) {
-                    businesses = allBusinesses.filter(b => b.id !== user.uid);
+                    businesses = allBusinesses;
+                    filteredBusinesses = [...businesses];
                     renderBusinessList();
                     updateBusinessMarkers();
+                    
+                    // Check if we have a business ID in URL
+                    checkUrlForBusinessId();
                 }
             });
             
@@ -285,6 +336,7 @@ async function handleAuthChange(user) {
         };
         
         businesses = [];
+        filteredBusinesses = [];
         stats = {
             views: 0,
             scans: 0,
@@ -324,7 +376,7 @@ function updateProfileDisplay() {
 function sync() {
     if (!currentUser) return;
     
-    // Update appState from inputs
+    // Update input fields with appState data (this ensures editor shows saved data)
     const inputName = document.getElementById('inputName');
     const inputTagline = document.getElementById('inputTagline');
     const inputDesc = document.getElementById('inputDesc');
@@ -332,12 +384,12 @@ function sync() {
     const inputPhone = document.getElementById('inputPhone');
     const inputEmail = document.getElementById('inputEmail');
     
-    if (inputName) appState.name = inputName.value;
-    if (inputTagline) appState.tagline = inputTagline.value;
-    if (inputDesc) appState.desc = inputDesc.value;
-    if (inputAddress) appState.address = inputAddress.value;
-    if (inputPhone) appState.phone = inputPhone.value;
-    if (inputEmail) appState.email = inputEmail.value;
+    if (inputName) inputName.value = appState.name || '';
+    if (inputTagline) inputTagline.value = appState.tagline || '';
+    if (inputDesc) inputDesc.value = appState.desc || '';
+    if (inputAddress) inputAddress.value = appState.address || '';
+    if (inputPhone) inputPhone.value = appState.phone || '';
+    if (inputEmail) inputEmail.value = appState.email || '';
 
     // Update dashboard displays
     const businessNameDisplay = document.getElementById('businessNameDisplay');
@@ -345,6 +397,25 @@ function sync() {
     
     if (businessNameDisplay) businessNameDisplay.innerText = appState.name || 'Your Business';
     if (businessAddressDisplay) businessAddressDisplay.innerText = appState.address || 'Set your location';
+    
+    // Update cover photo if exists
+    if (appState.coverImage) {
+        const coverPreview = document.getElementById('coverPreview');
+        const coverText = document.getElementById('coverText');
+        if (coverPreview) {
+            coverPreview.src = appState.coverImage;
+            coverPreview.classList.remove('hidden');
+            if (coverText) coverText.classList.add('hidden');
+        }
+    }
+    
+    // Update profile picture if exists
+    if (appState.profileImage) {
+        const profileIcon = document.querySelector('.w-24.h-24.rounded-2xl.border-4.border-white');
+        if (profileIcon) {
+            profileIcon.innerHTML = `<img src="${appState.profileImage}" class="w-full h-full object-cover rounded-2xl">`;
+        }
+    }
     
     updateProfileDisplay();
     updateBusinessPopup();
@@ -419,6 +490,160 @@ async function logout() {
     showLoading(false);
 }
 
+// ==================== BUSINESS POPUP FUNCTIONS ====================
+function showBusinessPopup(business) {
+    if (!business) return;
+    
+    currentPopupBusiness = business;
+    const modal = document.getElementById('businessPopupModal');
+    if (!modal) return;
+    
+    // Set business info
+    document.getElementById('popupBusinessName').innerText = business.name || 'Business Name';
+    document.getElementById('popupBusinessTagline').innerText = business.tagline || '';
+    document.getElementById('popupBusinessDesc').innerText = business.desc || 'No description available';
+    document.getElementById('popupBusinessPhone').innerText = business.phone || 'Not provided';
+    document.getElementById('popupBusinessEmail').innerText = business.email || 'Not provided';
+    document.getElementById('popupBusinessAddress').innerText = business.address || 'Location not set';
+    
+    // Set contact links
+    const phoneLink = document.getElementById('popupPhoneLink');
+    const emailLink = document.getElementById('popupEmailLink');
+    
+    if (business.phone) {
+        phoneLink.href = `tel:${business.phone}`;
+        phoneLink.classList.remove('opacity-50', 'pointer-events-none');
+    } else {
+        phoneLink.href = '#';
+        phoneLink.classList.add('opacity-50', 'pointer-events-none');
+    }
+    
+    if (business.email) {
+        emailLink.href = `mailto:${business.email}`;
+        emailLink.classList.remove('opacity-50', 'pointer-events-none');
+    } else {
+        emailLink.href = '#';
+        emailLink.classList.add('opacity-50', 'pointer-events-none');
+    }
+    
+    // Set message recipient
+    document.getElementById('messageRecipient').innerText = business.name || 'Business';
+    
+    // Handle cover image
+    const coverImg = document.getElementById('popupCoverImage');
+    const coverPlaceholder = document.getElementById('popupCoverPlaceholder');
+    
+    if (business.coverImage) {
+        coverImg.src = business.coverImage;
+        coverImg.classList.remove('hidden');
+        coverPlaceholder.classList.add('hidden');
+    } else {
+        coverImg.classList.add('hidden');
+        coverPlaceholder.classList.remove('hidden');
+    }
+    
+    // Handle profile image
+    const profileImg = document.getElementById('popupProfileImage');
+    const profileIcon = document.getElementById('popupProfileIcon');
+    
+    if (business.profileImage) {
+        profileImg.src = business.profileImage;
+        profileImg.classList.remove('hidden');
+        profileIcon.classList.add('hidden');
+    } else {
+        profileImg.classList.add('hidden');
+        profileIcon.classList.remove('hidden');
+    }
+    
+    // Load portfolio images
+    const portfolioGrid = document.getElementById('popupPortfolioGrid');
+    if (portfolioGrid) {
+        if (business.portfolio && business.portfolio.length > 0) {
+            portfolioGrid.innerHTML = business.portfolio.map(item => `
+                <div class="aspect-square rounded-lg overflow-hidden bg-slate-100">
+                    <img src="${item.image}" alt="${item.name}" class="w-full h-full object-cover">
+                </div>
+            `).join('');
+        } else {
+            portfolioGrid.innerHTML = '<p class="text-xs text-slate-400 col-span-3 text-center py-2">No portfolio items</p>';
+        }
+    }
+    
+    // Generate QR code for this business
+    generateBusinessQRCode(business);
+    
+    modal.classList.remove('hidden');
+    
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
+}
+
+function closeBusinessPopup() {
+    const modal = document.getElementById('businessPopupModal');
+    if (modal) modal.classList.add('hidden');
+    currentPopupBusiness = null;
+}
+
+function generateBusinessQRCode(business) {
+    const qrElement = document.getElementById('popupQRCode');
+    if (!qrElement) return;
+    
+    qrElement.innerHTML = '';
+    
+    // Create deep link URL with business ID
+    const baseUrl = window.location.origin + window.location.pathname;
+    const businessUrl = `${baseUrl}?business=${business.id}`;
+    
+    if (typeof QRCode !== 'undefined') {
+        popupQRCode = new QRCode(qrElement, {
+            text: businessUrl,
+            width: 150,
+            height: 150
+        });
+    }
+}
+
+function getDirectionsToBusiness() {
+    if (!currentPopupBusiness || !currentPopupBusiness.location) return;
+    
+    const { lat, lng } = currentPopupBusiness.location;
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+    window.open(url, '_blank');
+    
+    if (currentUser && currentPopupBusiness.id !== currentUser.uid) {
+        logActivity(currentPopupBusiness.id, 'maps');
+    }
+}
+
+function sendMessageToBusiness() {
+    if (!currentPopupBusiness) return;
+    document.getElementById('messageModal').classList.remove('hidden');
+}
+
+function closeMessageModal() {
+    document.getElementById('messageModal').classList.add('hidden');
+    document.getElementById('messageInput').value = '';
+}
+
+async function sendMessage() {
+    const message = document.getElementById('messageInput').value.trim();
+    if (!message || !currentUser || !currentPopupBusiness) return;
+    
+    showLoading(true);
+    
+    try {
+        await sendMessage(currentUser.uid, currentPopupBusiness.id, message);
+        showToast('Message sent!', 'success');
+        closeMessageModal();
+    } catch (error) {
+        console.error('Error sending message:', error);
+        showToast('Error sending message', 'error');
+    }
+    
+    showLoading(false);
+}
+
 // ==================== DELETE ACCOUNT FUNCTIONS ====================
 function openDeleteModal() {
     toggleProfileMenu();
@@ -475,10 +700,10 @@ function initDashboardMap() {
         }, true);
     }
 
-    // Add all other business markers (not just active ones)
+    // Add all other business markers
     if (businesses && businesses.length > 0) {
         businesses.forEach(business => {
-            if (business.location && business.location.lat) {
+            if (business.id !== currentUser?.uid && business.location && business.location.lat) {
                 addBusinessMarker(business, false);
             }
         });
@@ -534,23 +759,38 @@ function addBusinessMarker(business, isCurrent = false) {
         <div class="text-center min-w-[150px]">
             <h3 class="font-bold text-indigo-600">${business.name || 'Your Business'}</h3>
             <p class="text-xs text-slate-500 mt-1">${business.address || 'Location set'}</p>
-            ${business.phone ? `<p class="text-xs text-slate-500 mt-1">📞 ${business.phone}</p>` : ''}
-            ${business.email ? `<p class="text-xs text-slate-500 mt-1">✉️ ${business.email}</p>` : ''}
+            <button onclick="focusOnBusiness('${business.id}')" class="mt-2 text-xs bg-indigo-600 text-white px-3 py-1 rounded-full hover:bg-indigo-700 transition-colors">
+                View Details
+            </button>
         </div>
     ` : `
         <div class="text-center min-w-[150px]">
             <h3 class="font-bold">${business.name || 'Business'}</h3>
             <p class="text-xs text-slate-500 mt-1">${business.address || 'Location set'}</p>
-            ${business.phone ? `<p class="text-xs text-slate-500 mt-1">📞 ${business.phone}</p>` : ''}
-            ${business.email ? `<p class="text-xs text-slate-500 mt-1">✉️ ${business.email}</p>` : ''}
+            <button onclick="showBusinessPopupFromId('${business.id}')" class="mt-2 text-xs bg-indigo-600 text-white px-3 py-1 rounded-full hover:bg-indigo-700 transition-colors">
+                View Business
+            </button>
         </div>
     `;
 
     marker.bindPopup(popupContent);
+    marker.on('click', () => {
+        if (!isCurrent) {
+            showBusinessPopup(business);
+        }
+    });
+    
     businessMarkers.push({ id: business.id, marker, isCurrent });
     
     if (typeof lucide !== 'undefined') {
         lucide.createIcons();
+    }
+}
+
+function showBusinessPopupFromId(businessId) {
+    const business = businesses.find(b => b.id === businessId);
+    if (business) {
+        showBusinessPopup(business);
     }
 }
 
@@ -569,7 +809,7 @@ function updateBusinessMarkers() {
     // Add all business markers
     if (businesses && businesses.length > 0) {
         businesses.forEach(business => {
-            if (business.location && business.location.lat) {
+            if (business.id !== currentUser?.uid && business.location && business.location.lat) {
                 addBusinessMarker(business, false);
             }
         });
@@ -591,8 +831,9 @@ function updateBusinessPopup() {
             <div class="text-center min-w-[150px]">
                 <h3 class="font-bold text-indigo-600">${appState.name || 'Your Business'}</h3>
                 <p class="text-xs text-slate-500 mt-1">${appState.address || 'Location set'}</p>
-                ${appState.phone ? `<p class="text-xs text-slate-500 mt-1">📞 ${appState.phone}</p>` : ''}
-                ${appState.email ? `<p class="text-xs text-slate-500 mt-1">✉️ ${appState.email}</p>` : ''}
+                <button onclick="focusOnBusiness('${currentUser?.uid}')" class="mt-2 text-xs bg-indigo-600 text-white px-3 py-1 rounded-full hover:bg-indigo-700 transition-colors">
+                    View Details
+                </button>
             </div>
         `);
     }
@@ -602,7 +843,7 @@ function focusOnBusiness(businessId) {
     if (!dashboardMap) return;
     
     let target;
-    if (businessId === 'current') {
+    if (businessId === currentUser?.uid) {
         target = appState;
     } else {
         target = businesses.find(b => b.id === businessId);
@@ -613,6 +854,11 @@ function focusOnBusiness(businessId) {
         
         const marker = businessMarkers.find(m => m.id === businessId);
         if (marker) marker.marker.openPopup();
+        
+        // Show business popup for other businesses
+        if (businessId !== currentUser?.uid) {
+            showBusinessPopup(target);
+        }
     }
 }
 
@@ -773,11 +1019,13 @@ function renderBusinessList() {
     const list = document.getElementById('businessList');
     if (!list) return;
     
-    if (!businesses || businesses.length === 0) {
+    const businessesToShow = filteredBusinesses.length > 0 ? filteredBusinesses : businesses;
+    
+    if (!businessesToShow || businessesToShow.length === 0) {
         list.innerHTML = `
             <div class="p-8 text-center text-slate-400">
                 <i data-lucide="users" class="w-8 h-8 mx-auto mb-2 opacity-20"></i>
-                <p class="text-sm">No other businesses yet</p>
+                <p class="text-sm">No businesses found</p>
             </div>
         `;
         if (typeof lucide !== 'undefined') {
@@ -786,8 +1034,10 @@ function renderBusinessList() {
         return;
     }
     
-    list.innerHTML = businesses.map(business => `
-        <div class="p-4 border-b hover:bg-slate-50 transition-colors cursor-pointer" onclick="focusOnBusiness('${business.id}')">
+    list.innerHTML = businessesToShow
+        .filter(business => business.id !== currentUser?.uid)
+        .map(business => `
+        <div class="p-4 border-b hover:bg-slate-50 transition-colors cursor-pointer" onclick="showBusinessPopupFromId('${business.id}')">
             <div class="flex gap-3">
                 <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-xl overflow-hidden">
                     ${business.profileImage 
@@ -818,10 +1068,9 @@ function initQRCode() {
     const qrElement = document.getElementById("qrcode-modal");
     if (!qrElement) return;
     
-    // Clear existing QR code
     qrElement.innerHTML = '';
     
-    const link = `https://www.google.com/maps/search/?api=1&query=${appState.location.lat},${appState.location.lng}`;
+    const link = `${window.location.origin}${window.location.pathname}?business=${currentUser?.uid}`;
     
     if (typeof QRCode !== 'undefined') {
         qrcodeModal = new QRCode(qrElement, {
@@ -832,10 +1081,17 @@ function initQRCode() {
     }
 }
 
+function initPopupQRCode() {
+    const qrElement = document.getElementById('popupQRCode');
+    if (!qrElement) return;
+    
+    qrElement.innerHTML = '';
+}
+
 function updateQRCode() {
     if (!qrcodeModal) return;
     
-    const link = `https://www.google.com/maps/search/?api=1&query=${appState.location.lat},${appState.location.lng}`;
+    const link = `${window.location.origin}${window.location.pathname}?business=${currentUser?.uid}`;
     qrcodeModal.clear();
     qrcodeModal.makeCode(link);
 }
@@ -1088,7 +1344,6 @@ function updateAnalyticsCharts() {
 }
 
 function generateTimeframeData(timeframe) {
-    // Generate realistic data based on actual stats
     const baseValue = stats.views || 100;
     
     switch(timeframe) {
@@ -1189,7 +1444,7 @@ function uploadProfilePicture() {
                 appState.profileImage = event.target.result;
             }
             showToast('Profile picture updated!', 'success');
-            updateProfileDisplay(); // Update initial after profile pic upload
+            updateProfileDisplay();
         };
         reader.readAsDataURL(file);
     };
@@ -1255,7 +1510,7 @@ function updateStats() {
     if (scansSidebar) scansSidebar.innerText = stats.scans || 0;
     if (viewsMini) viewsMini.innerText = stats.views || 0;
     if (scansMini) scansMini.innerText = stats.scans || 0;
-    if (businessCount) businessCount.innerText = (businesses?.length || 0) + 1;
+    if (businessCount) businessCount.innerText = businesses.length || 0;
     
     if (statsToday) statsToday.innerText = stats.today || 0;
     if (statsTodayScans) statsTodayScans.innerText = stats.scans || 0;
@@ -1426,6 +1681,12 @@ window.syncToRealTimeLocation = syncToRealTimeLocation;
 window.openLocationSearch = openLocationSearch;
 window.selectAddress = selectAddress;
 window.focusOnBusiness = focusOnBusiness;
+window.showBusinessPopupFromId = showBusinessPopupFromId;
+window.closeBusinessPopup = closeBusinessPopup;
+window.getDirectionsToBusiness = getDirectionsToBusiness;
+window.sendMessageToBusiness = sendMessageToBusiness;
+window.closeMessageModal = closeMessageModal;
+window.sendMessage = sendMessage;
 window.addPortfolioItem = addPortfolioItem;
 window.triggerPortfolioUpload = triggerPortfolioUpload;
 window.updatePortfolioName = updatePortfolioName;
