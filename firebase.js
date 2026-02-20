@@ -8,7 +8,12 @@ import {
     increment, 
     onSnapshot,
     collection,
-    deleteDoc
+    deleteDoc,
+    addDoc,
+    query,
+    where,
+    orderBy,
+    serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 import { 
@@ -101,6 +106,13 @@ export const deleteUserAccount = async (user) => {
         await deleteDoc(doc(db, "businesses", user.uid));
         await deleteDoc(doc(db, "analytics", user.uid));
         
+        // Delete all messages
+        const messagesQuery = query(collection(db, "messages"), where("participants", "array-contains", user.uid));
+        const messagesSnapshot = await getDocs(messagesQuery);
+        messagesSnapshot.forEach(async (messageDoc) => {
+            await deleteDoc(messageDoc.ref);
+        });
+        
         // Delete the user account
         await deleteUser(user);
     } catch (error) {
@@ -154,6 +166,49 @@ export const listenAllBusinesses = (callback) => {
         callback(businesses);
     }, (error) => {
         console.error("Error listening to businesses:", error);
+    });
+};
+
+/* =========================
+   MESSAGING FUNCTIONS
+========================= */
+
+export const sendMessage = async (fromUid, toUid, content) => {
+    try {
+        const messageData = {
+            from: fromUid,
+            to: toUid,
+            content: content,
+            timestamp: serverTimestamp(),
+            read: false,
+            participants: [fromUid, toUid]
+        };
+        
+        await addDoc(collection(db, "messages"), messageData);
+    } catch (error) {
+        console.error("Error sending message:", error);
+        throw error;
+    }
+};
+
+export const listenForMessages = (uid, callback) => {
+    const q = query(
+        collection(db, "messages"), 
+        where("participants", "array-contains", uid),
+        orderBy("timestamp", "desc")
+    );
+    
+    return onSnapshot(q, (snapshot) => {
+        const messages = [];
+        snapshot.forEach((doc) => {
+            messages.push({
+                id: doc.id,
+                ...doc.data()
+            });
+        });
+        callback(messages);
+    }, (error) => {
+        console.error("Error listening to messages:", error);
     });
 };
 
