@@ -472,11 +472,95 @@
         </div>
     </div>
 
-    <!-- Profile View Modal (Enhanced with full business details) -->
+    <!-- Business Popup Modal (for viewing other businesses) -->
+    <div id="businessPopupModal" class="fixed inset-0 z-[250] bg-black/70 backdrop-blur-md hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-[2rem] w-full max-w-lg max-h-[80vh] overflow-y-auto p-6 relative shadow-2xl scale-in">
+            <button onclick="closeBusinessPopup()" class="absolute top-6 right-6 text-slate-400 hover:text-slate-600 z-10">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+            
+            <!-- Cover Photo -->
+            <div class="h-32 bg-slate-200 rounded-xl mb-16 relative overflow-hidden">
+                <img id="popupCoverImage" class="w-full h-full object-cover hidden">
+                <div id="popupCoverPlaceholder" class="w-full h-full bg-gradient-to-r from-indigo-500 to-purple-500"></div>
+            </div>
+            
+            <!-- Profile Image -->
+            <div class="absolute top-20 left-1/2 -translate-x-1/2 w-24 h-24 rounded-2xl border-4 border-white bg-gradient-to-br from-indigo-500 to-purple-500 shadow-lg flex items-center justify-center text-white overflow-hidden">
+                <img id="popupProfileImage" class="w-full h-full object-cover hidden">
+                <i id="popupProfileIcon" data-lucide="store" class="w-12 h-12"></i>
+            </div>
+            
+            <!-- Business Info -->
+            <div class="text-center mt-2 mb-6">
+                <h2 id="popupBusinessName" class="text-2xl font-bold">Business Name</h2>
+                <p id="popupBusinessTagline" class="text-sm text-slate-500 mt-1"></p>
+            </div>
+            
+            <!-- Contact & Action Buttons -->
+            <div class="flex justify-center gap-3 mb-6">
+                <a id="popupPhoneLink" href="#" target="_blank" class="w-12 h-12 rounded-full bg-green-50 text-green-600 flex items-center justify-center hover:bg-green-100 transition-colors">
+                    <i data-lucide="phone" class="w-5 h-5"></i>
+                </a>
+                <a id="popupEmailLink" href="#" target="_blank" class="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-100 transition-colors">
+                    <i data-lucide="mail" class="w-5 h-5"></i>
+                </a>
+                <button id="popupMessageBtn" onclick="sendMessageToBusiness()" class="w-12 h-12 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center hover:bg-purple-100 transition-colors">
+                    <i data-lucide="message-circle" class="w-5 h-5"></i>
+                </button>
+                <button id="popupDirectionsBtn" onclick="getDirectionsToBusiness()" class="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100 transition-colors">
+                    <i data-lucide="navigation" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <!-- About Section -->
+            <div class="mb-6 p-4 bg-slate-50 rounded-xl">
+                <h3 class="font-bold text-sm mb-2 flex items-center gap-2">
+                    <i data-lucide="info" class="w-4 h-4 text-indigo-500"></i> About
+                </h3>
+                <p id="popupBusinessDesc" class="text-sm text-slate-600"></p>
+            </div>
+            
+            <!-- Contact Details -->
+            <div class="mb-6 space-y-3">
+                <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+                    <i data-lucide="phone" class="w-5 h-5 text-green-500"></i>
+                    <p id="popupBusinessPhone" class="text-sm text-slate-600"></p>
+                </div>
+                <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+                    <i data-lucide="mail" class="w-5 h-5 text-indigo-500"></i>
+                    <p id="popupBusinessEmail" class="text-sm text-slate-600"></p>
+                </div>
+                <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+                    <i data-lucide="map-pin" class="w-5 h-5 text-purple-500"></i>
+                    <p id="popupBusinessAddress" class="text-sm text-slate-600"></p>
+                </div>
+            </div>
+            
+            <!-- Portfolio Grid -->
+            <div class="mb-6">
+                <h3 class="font-bold text-sm mb-3 flex items-center gap-2">
+                    <i data-lucide="image" class="w-4 h-4 text-pink-500"></i> Portfolio
+                </h3>
+                <div id="popupPortfolioGrid" class="grid grid-cols-3 gap-2">
+                    <!-- Portfolio images will be loaded here -->
+                </div>
+            </div>
+            
+            <!-- QR Code Section -->
+            <div class="mb-4 p-4 bg-slate-50 rounded-xl text-center">
+                <h3 class="font-bold text-sm mb-3">Scan to Get Directions</h3>
+                <div id="popupQRCode" class="inline-block p-2 bg-white rounded-xl mb-3"></div>
+                <p class="text-xs text-slate-500">Scan this QR code with TapMap to navigate to this business</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Profile View Modal -->
     <div id="profileModal" class="fixed inset-0 z-[250] bg-black/70 backdrop-blur-md hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-[2rem] w-full max-w-md p-6 relative shadow-2xl scale-in">
             <button onclick="closeProfileModal()" class="absolute top-6 right-6 text-slate-400 hover:text-slate-600">
-                <i data-lucide="x"></i>
+                <i data-lucide="x" class="w-5 h-5"></i>
             </button>
             
             <div class="text-center mb-6">
@@ -552,6 +636,31 @@
                 </button>
                 <button onclick="confirmDelete()" class="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 transition-colors">
                     Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Modal -->
+    <div id="messageModal" class="fixed inset-0 z-[250] bg-black/70 backdrop-blur-md hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-[2rem] w-full max-w-md p-6 relative shadow-2xl scale-in">
+            <button onclick="closeMessageModal()" class="absolute top-6 right-6 text-slate-400 hover:text-slate-600">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+            
+            <h2 class="text-2xl font-bold mb-4 text-center">Send Message</h2>
+            
+            <div class="mb-4">
+                <label class="text-xs font-medium text-slate-500 mb-1 block">To: <span id="messageRecipient" class="font-bold text-indigo-600"></span></label>
+                <textarea id="messageInput" rows="4" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none resize-none" placeholder="Type your message here..."></textarea>
+            </div>
+            
+            <div class="flex gap-3">
+                <button onclick="closeMessageModal()" class="flex-1 px-4 py-3 border rounded-xl text-sm font-medium hover:bg-slate-50 transition-colors">
+                    Cancel
+                </button>
+                <button onclick="sendMessage()" class="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors">
+                    Send
                 </button>
             </div>
         </div>
