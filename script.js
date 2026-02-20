@@ -11,7 +11,7 @@ import {
     logActivity,
     listenAnalytics,
     listenAuth,
-    sendMessage,
+    sendMessage as firebaseSendMessage,
     listenForMessages
 } from './firebase.js';
 
@@ -626,14 +626,14 @@ function closeMessageModal() {
     document.getElementById('messageInput').value = '';
 }
 
-async function sendMessage() {
+async function handleSendMessage() {
     const message = document.getElementById('messageInput').value.trim();
     if (!message || !currentUser || !currentPopupBusiness) return;
     
     showLoading(true);
     
     try {
-        await sendMessage(currentUser.uid, currentPopupBusiness.id, message);
+        await firebaseSendMessage(currentUser.uid, currentPopupBusiness.id, message);
         showToast('Message sent!', 'success');
         closeMessageModal();
     } catch (error) {
@@ -1686,7 +1686,7 @@ window.closeBusinessPopup = closeBusinessPopup;
 window.getDirectionsToBusiness = getDirectionsToBusiness;
 window.sendMessageToBusiness = sendMessageToBusiness;
 window.closeMessageModal = closeMessageModal;
-window.sendMessage = sendMessage;
+window.handleSendMessage = handleSendMessage;
 window.addPortfolioItem = addPortfolioItem;
 window.triggerPortfolioUpload = triggerPortfolioUpload;
 window.updatePortfolioName = updatePortfolioName;
