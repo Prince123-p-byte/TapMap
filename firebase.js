@@ -27,7 +27,7 @@ import {
 
 // --- FIREBASE CONFIG ---
 const firebaseConfig = {
-  apiKey: "AIzaSyC07qBPE1gsAFckEEbwvhCouhfCN4dcniU",
+  apiKey:
   authDomain: "tapmap-a7e1d.firebaseapp.com",
   projectId: "tapmap-a7e1d",
   storageBucket: "tapmap-a7e1d.firebasestorage.app",
@@ -253,4 +253,5 @@ export const listenAnalytics = (uid, callback) => {
         console.error("Error listening to analytics:", error);
     });
 };
+
 
