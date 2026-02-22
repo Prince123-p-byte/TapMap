@@ -27,7 +27,7 @@ import {
 
 // --- FIREBASE CONFIG ---
 const firebaseConfig = {
-  apiKey: "AIzaSyDDUVE-5BIjKgh-PcOcnvGKntCaoA0R37A",
+  apiKey: "AIzaSyC07qBPE1gsAFckEEbwvhCouhfCN4dcniU",
   authDomain: "tapmap-a7e1d.firebaseapp.com",
   projectId: "tapmap-a7e1d",
   storageBucket: "tapmap-a7e1d.firebasestorage.app",
@@ -35,7 +35,6 @@ const firebaseConfig = {
   appId: "1:1073914424721:web:dd9fa3f530cd9c74be3e30",
   measurementId: "G-EWQGY2LEFC"
 };
-
 const app = initializeApp(firebaseConfig);
 
 export const db = getFirestore(app);
@@ -254,3 +253,4 @@ export const listenAnalytics = (uid, callback) => {
         console.error("Error listening to analytics:", error);
     });
 };
+
