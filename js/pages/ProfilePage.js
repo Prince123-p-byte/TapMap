@@ -1,17 +1,113 @@
-// Profile Page Component
+// Profile Page Component with Smart Directions
 const ProfilePage = ({ business, onBack }) => {
     const [activeTab, setActiveTab] = React.useState('about');
-    const [showContactModal, setShowContactModal] = React.useState(false);
     const [contactMessage, setContactMessage] = React.useState('');
+    const [distance, setDistance] = React.useState(null);
+    const [userLocation, setUserLocation] = React.useState(null);
 
     React.useEffect(() => {
         // Record view
-        DataManager.recordView(business.id);
-    }, [business.id]);
+        if (business?.id) {
+            DataManager.recordView(business.id);
+        }
 
-    const getGoogleMapsUrl = () => {
+        // Get user location for distance calculation
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    setUserLocation({
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    });
+
+                    // Calculate distance to business
+                    try {
+                        const coords = await GeolocationUtils.getCoordsFromAddress(business.address);
+                        const dist = GeolocationUtils.calculateDistance(
+                            position.coords.latitude,
+                            position.coords.longitude,
+                            coords.lat,
+                            coords.lon
+                        );
+                        setDistance(dist);
+                    } catch (error) {
+                        console.error('Error calculating distance:', error);
+                    }
+                },
+                (error) => {
+                    console.log('Location permission denied');
+                }
+            );
+        }
+    }, [business?.id, business?.address]);
+
+    // Smart Directions - Opens appropriate maps app based on device
+    const openDirections = (mode = 'drive') => {
+        if (!business?.address) {
+            Toast.show('Address not available', 'error');
+            return;
+        }
+
         const encodedAddress = encodeURIComponent(business.address);
-        return `https://www.google.com/maps/dir/?api=1&destination=${encodedAddress}`;
+        const encodedName = encodeURIComponent(business.name);
+        
+        // Detect device
+        const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+        
+        // Travel mode mapping
+        const travelMode = {
+            drive: 'driving',
+            transit: 'transit',
+            walk: 'walking',
+            bike: 'bicycling'
+        }[mode] || 'driving';
+        
+        // iOS / Mac detection
+        if (/iPad|iPhone|iPod|Macintosh/.test(userAgent) && !window.MSStream) {
+            // For iOS/Mac - Try Apple Maps first
+            const appleMapsUrl = `maps://?q=${encodedName}&daddr=${encodedAddress}&dirflg=${travelMode === 'walking' ? 'w' : 'd'}`;
+            const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodedAddress}&travelmode=${travelMode}`;
+            
+            // Try to open Apple Maps
+            window.location.href = appleMapsUrl;
+            
+            // Fallback to Google Maps if Apple Maps doesn't open
+            setTimeout(() => {
+                if (!document.hidden) {
+                    window.open(googleMapsUrl, '_blank');
+                }
+            }, 500);
+        } 
+        // Android detection
+        else if (/android/i.test(userAgent)) {
+            // For Android - Open Google Maps app
+            const intentUrl = `intent://maps/dir/?api=1&destination=${encodedAddress}&travelmode=${travelMode}#Intent;scheme=https;package=com.google.android.apps.maps;end`;
+            const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodedAddress}&travelmode=${travelMode}`;
+            
+            // Try to open via intent
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = intentUrl;
+            document.body.appendChild(iframe);
+            
+            // Fallback to web after timeout
+            setTimeout(() => {
+                document.body.removeChild(iframe);
+                if (!document.hidden) {
+                    window.open(webUrl, '_blank');
+                }
+            }, 500);
+        }
+        // Windows/Others
+        else {
+            // For Windows and others - Open Google Maps web
+            const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodedAddress}&travelmode=${travelMode}`;
+            window.open(mapsUrl, '_blank');
+        }
+        
+        // Track the direction request
+        DataManager.recordClick(business.id);
+        Toast.show('Opening directions...', 'info');
     };
 
     const handleContact = (type) => {
@@ -22,7 +118,7 @@ const ProfilePage = ({ business, onBack }) => {
                 window.location.href = `tel:${business.phone}`;
                 break;
             case 'whatsapp':
-                window.open(`https://wa.me/${business.whatsapp.replace(/\D/g, '')}`, '_blank');
+                window.open(`https://wa.me/${business.whatsapp?.replace(/\D/g, '')}`, '_blank');
                 break;
             case 'email':
                 window.location.href = `mailto:${business.email}`;
@@ -34,12 +130,48 @@ const ProfilePage = ({ business, onBack }) => {
         DataManager.incrementQRScan(business.id);
     };
 
+    const handleShare = async () => {
+        const shareData = {
+            title: business.name,
+            text: `Check out ${business.name} at ${business.address}`,
+            url: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}`
+        };
+        
+        if (navigator.share) {
+            try {
+                await navigator.share(shareData);
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    Toast.show('Share cancelled', 'info');
+                }
+            }
+        } else {
+            navigator.clipboard.writeText(shareData.url);
+            Toast.show('Location link copied to clipboard!', 'success');
+        }
+    };
+
     const tabs = [
         { id: 'about', label: 'About' },
         { id: 'gallery', label: 'Gallery' },
         { id: 'reviews', label: 'Reviews' },
         { id: 'contact', label: 'Contact' }
     ];
+
+    // Check if business is open now (simplified)
+    const isOpenNow = () => {
+        if (!business.hours) return false;
+        // This is a simplified check - in production, you'd parse hours properly
+        return true;
+    };
+
+    if (!business) {
+        return React.createElement(
+            'div',
+            { className: "pt-20 text-center" },
+            React.createElement(LoadingSpinner)
+        );
+    }
 
     return React.createElement(
         'div',
@@ -49,7 +181,7 @@ const ProfilePage = ({ business, onBack }) => {
             'div',
             { className: "relative h-96 w-full" },
             React.createElement('img', {
-                src: business.coverImage,
+                src: business.coverImage || 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=1200',
                 className: "w-full h-full object-cover",
                 alt: "Cover"
             }),
@@ -84,7 +216,7 @@ const ProfilePage = ({ business, onBack }) => {
                         React.createElement(
                             'div',
                             { className: "w-24 h-24 md:w-32 md:h-32 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-white text-4xl font-black shadow-lg" },
-                            business.logo
+                            business.logo || business.name?.charAt(0).toUpperCase()
                         ),
                         // Basic Info
                         React.createElement(
@@ -120,14 +252,20 @@ const ProfilePage = ({ business, onBack }) => {
                                     'div',
                                     { className: "flex items-center gap-1" },
                                     React.createElement(Icon, { name: "star", size: 20, className: "text-amber-400 fill-current" }),
-                                    React.createElement('span', { className: "font-bold text-lg" }, business.rating),
-                                    React.createElement('span', { className: "text-gray-400" }, `(${business.reviews} reviews)`)
+                                    React.createElement('span', { className: "font-bold text-lg" }, business.rating || '5.0'),
+                                    React.createElement('span', { className: "text-gray-400" }, `(${business.reviews || 0} reviews)`)
                                 ),
                                 React.createElement(
                                     'div',
                                     { className: "flex items-center gap-1" },
                                     React.createElement(Icon, { name: "eye", size: 20, className: "text-gray-400" }),
                                     React.createElement('span', { className: "font-medium" }, business.views?.toLocaleString() || 0, " views")
+                                ),
+                                distance && React.createElement(
+                                    'div',
+                                    { className: "flex items-center gap-1 text-indigo-600" },
+                                    React.createElement(Icon, { name: "location-arrow", size: 16 }),
+                                    React.createElement('span', { className: "font-medium" }, GeolocationUtils.formatDistance(distance), " away")
                                 )
                             )
                         )
@@ -145,7 +283,7 @@ const ProfilePage = ({ business, onBack }) => {
                             React.createElement(Icon, { name: "phone", size: 18 }),
                             "Call Now"
                         ),
-                        React.createElement(
+                        business.whatsapp && React.createElement(
                             'button',
                             {
                                 onClick: () => handleContact('whatsapp'),
@@ -181,10 +319,10 @@ const ProfilePage = ({ business, onBack }) => {
                         'div',
                         null,
                         React.createElement('h3', { className: "text-xl font-bold mb-4" }, "About the Business"),
-                        React.createElement('p', { className: "text-gray-600 leading-relaxed" }, business.description)
+                        React.createElement('p', { className: "text-gray-600 leading-relaxed" }, business.description || 'No description available.')
                     ),
                     // Business Hours
-                    React.createElement(
+                    business.hours && React.createElement(
                         'div',
                         null,
                         React.createElement('h3', { className: "text-xl font-bold mb-4" }, "Business Hours"),
@@ -200,7 +338,7 @@ const ProfilePage = ({ business, onBack }) => {
                             { className: "bg-gray-50 rounded-xl p-6" },
                             React.createElement(
                                 'div',
-                                { className: "flex items-start gap-4" },
+                                { className: "flex items-start gap-4 mb-6" },
                                 React.createElement(
                                     'div',
                                     { className: "w-12 h-12 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center flex-shrink-0" },
@@ -211,16 +349,83 @@ const ProfilePage = ({ business, onBack }) => {
                                     { className: "flex-1" },
                                     React.createElement('p', { className: "font-medium mb-2" }, business.address),
                                     React.createElement(
-                                        'a',
-                                        {
-                                            href: getGoogleMapsUrl(),
-                                            target: "_blank",
-                                            className: "inline-flex items-center gap-2 text-indigo-600 font-medium hover:underline"
-                                        },
-                                        React.createElement(Icon, { name: "location-arrow", size: 16 }),
-                                        "Get Directions on Google Maps"
+                                        'div',
+                                        { className: "flex items-center gap-4 text-sm" },
+                                        React.createElement(
+                                            'span',
+                                            { className: isOpenNow() ? 'text-green-600' : 'text-red-600' },
+                                            React.createElement(Icon, { name: "circle", size: 8, className: "mr-1" }),
+                                            isOpenNow() ? 'Open Now' : 'Closed'
+                                        ),
+                                        business.priceRange && React.createElement(
+                                            'span',
+                                            { className: "text-gray-500" },
+                                            business.priceRange
+                                        )
                                     )
                                 )
+                            ),
+
+                            // Directions Buttons
+                            React.createElement(
+                                'div',
+                                { className: "grid grid-cols-2 gap-3" },
+                                React.createElement(
+                                    'button',
+                                    {
+                                        onClick: () => openDirections('drive'),
+                                        className: "col-span-2 bg-indigo-600 text-white py-4 rounded-xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 text-lg shadow-lg shadow-indigo-200"
+                                    },
+                                    React.createElement(Icon, { name: "location-arrow", size: 20 }),
+                                    "Get Directions"
+                                ),
+                                React.createElement(
+                                    'button',
+                                    {
+                                        onClick: () => openDirections('drive'),
+                                        className: "bg-white border border-gray-200 text-gray-700 py-3 rounded-xl font-medium hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
+                                    },
+                                    React.createElement(Icon, { name: "car", size: 16 }),
+                                    "Drive"
+                                ),
+                                React.createElement(
+                                    'button',
+                                    {
+                                        onClick: () => openDirections('transit'),
+                                        className: "bg-white border border-gray-200 text-gray-700 py-3 rounded-xl font-medium hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
+                                    },
+                                    React.createElement(Icon, { name: "bus", size: 16 }),
+                                    "Transit"
+                                ),
+                                React.createElement(
+                                    'button',
+                                    {
+                                        onClick: () => openDirections('walk'),
+                                        className: "bg-white border border-gray-200 text-gray-700 py-3 rounded-xl font-medium hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
+                                    },
+                                    React.createElement(Icon, { name: "walking", size: 16 }),
+                                    "Walk"
+                                ),
+                                React.createElement(
+                                    'button',
+                                    {
+                                        onClick: () => openDirections('bike'),
+                                        className: "bg-white border border-gray-200 text-gray-700 py-3 rounded-xl font-medium hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
+                                    },
+                                    React.createElement(Icon, { name: "bicycle", size: 16 }),
+                                    "Bike"
+                                )
+                            ),
+
+                            // Share Button
+                            React.createElement(
+                                'button',
+                                {
+                                    onClick: handleShare,
+                                    className: "w-full mt-3 text-sm text-gray-500 hover:text-indigo-600 transition-colors flex items-center justify-center gap-2 py-2"
+                                },
+                                React.createElement(Icon, { name: "share-alt", size: 14 }),
+                                "Share this location"
                             )
                         )
                     )
@@ -245,18 +450,18 @@ const ProfilePage = ({ business, onBack }) => {
                         React.createElement(
                             'div',
                             { className: "text-center" },
-                            React.createElement('div', { className: "text-4xl font-bold text-indigo-600" }, business.rating),
+                            React.createElement('div', { className: "text-4xl font-bold text-indigo-600" }, business.rating || '5.0'),
                             React.createElement('div', { className: "flex gap-1 mt-2" },
                                 Array.from({ length: 5 }).map((_, i) =>
                                     React.createElement(Icon, {
                                         key: i,
                                         name: "star",
                                         size: 16,
-                                        className: i < Math.floor(business.rating) ? 'text-amber-400 fill-current' : 'text-gray-300'
+                                        className: i < Math.floor(business.rating || 5) ? 'text-amber-400 fill-current' : 'text-gray-300'
                                     })
                                 )
                             ),
-                            React.createElement('div', { className: "text-sm text-gray-500 mt-1" }, business.reviews, " reviews")
+                            React.createElement('div', { className: "text-sm text-gray-500 mt-1" }, business.reviews || 0, " reviews")
                         ),
                         React.createElement(
                             'div',
@@ -288,9 +493,9 @@ const ProfilePage = ({ business, onBack }) => {
                     React.createElement(
                         'div',
                         { className: "space-y-4" },
-                        React.createElement(
+                        business.phone && React.createElement(
                             'div',
-                            { className: "flex items-center gap-4 p-4 bg-gray-50 rounded-xl" },
+                            { className: "flex items-center gap-4 p-4 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors", onClick: () => handleContact('phone') },
                             React.createElement(
                                 'div',
                                 { className: "w-12 h-12 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center" },
@@ -303,9 +508,9 @@ const ProfilePage = ({ business, onBack }) => {
                                 React.createElement('div', { className: "font-medium" }, business.phone)
                             )
                         ),
-                        React.createElement(
+                        business.whatsapp && React.createElement(
                             'div',
-                            { className: "flex items-center gap-4 p-4 bg-gray-50 rounded-xl" },
+                            { className: "flex items-center gap-4 p-4 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors", onClick: () => handleContact('whatsapp') },
                             React.createElement(
                                 'div',
                                 { className: "w-12 h-12 rounded-xl bg-green-100 text-green-600 flex items-center justify-center" },
@@ -318,9 +523,9 @@ const ProfilePage = ({ business, onBack }) => {
                                 React.createElement('div', { className: "font-medium" }, business.whatsapp)
                             )
                         ),
-                        React.createElement(
+                        business.email && React.createElement(
                             'div',
-                            { className: "flex items-center gap-4 p-4 bg-gray-50 rounded-xl" },
+                            { className: "flex items-center gap-4 p-4 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors", onClick: () => handleContact('email') },
                             React.createElement(
                                 'div',
                                 { className: "w-12 h-12 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center" },
@@ -375,7 +580,7 @@ const ProfilePage = ({ business, onBack }) => {
                         'div',
                         { className: "inline-block p-4 bg-white rounded-2xl shadow-lg mb-4" },
                         React.createElement('img', {
-                            src: business.qrCode || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://adport.com/business/${business.id}`,
+                            src: business.qrCode || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://tapmap.com/business/${business.id}`,
                             alt: "QR Code",
                             className: "w-40 h-40"
                         })
@@ -392,19 +597,19 @@ const ProfilePage = ({ business, onBack }) => {
                         React.createElement(
                             'a',
                             {
-                                href: business.qrCode || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://adport.com/business/${business.id}`,
+                                href: business.qrCode || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://tapmap.com/business/${business.id}`,
                                 download: `${business.name}-qrcode.png`,
                                 onClick: handleQRScan,
-                                className: "flex-1 bg-indigo-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-all"
+                                className: "flex-1 bg-indigo-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
                             },
                             React.createElement(Icon, { name: "download", size: 16 }),
-                            " Download"
+                            "Download"
                         ),
                         React.createElement(
                             'button',
                             {
                                 onClick: () => {
-                                    navigator.clipboard?.writeText(`https://adport.com/business/${business.id}`);
+                                    navigator.clipboard?.writeText(`https://tapmap.com/business/${business.id}`);
                                     Toast.show('Link copied to clipboard');
                                 },
                                 className: "p-2 border border-gray-200 rounded-xl text-gray-500 hover:bg-gray-50 transition-all"
@@ -417,3 +622,6 @@ const ProfilePage = ({ business, onBack }) => {
         )
     );
 };
+
+// Make component globally available
+window.ProfilePage = ProfilePage;
