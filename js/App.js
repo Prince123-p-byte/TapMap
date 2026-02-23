@@ -1,6 +1,10 @@
 (function() {
     const App = () => {
-        const [activePage, setActivePage] = React.useState('home');
+        // Check for business ID in URL IMMEDIATELY - before any state is set
+        const urlParams = new URLSearchParams(window.location.search);
+        const initialBusinessId = urlParams.get('business');
+        
+        const [activePage, setActivePage] = React.useState(initialBusinessId ? 'profile' : 'home');
         const [businesses, setBusinesses] = React.useState([]);
         const [allBusinesses, setAllBusinesses] = React.useState([]);
         const [selectedBusiness, setSelectedBusiness] = React.useState(null);
@@ -12,6 +16,10 @@
         const [unreadCount, setUnreadCount] = React.useState(0);
         const [showNotifications, setShowNotifications] = React.useState(false);
         const [showUserMenu, setShowUserMenu] = React.useState(false);
+        const [initialBusinessLoaded, setInitialBusinessLoaded] = React.useState(false);
+
+        // Base URL for sharing
+        const BASE_URL = 'https://prince123-p-byte.github.io/TapMap';
 
         // Listen for auth modal event
         React.useEffect(() => {
@@ -34,12 +42,45 @@
             };
         }, []);
 
-        // Load all businesses on startup
+        // Load the specific business from URL if present
+        React.useEffect(() => {
+            const loadBusinessFromUrl = async () => {
+                if (initialBusinessId && !initialBusinessLoaded) {
+                    try {
+                        const doc = await db.collection('businesses').doc(initialBusinessId).get();
+                        if (doc.exists) {
+                            const business = {
+                                id: doc.id,
+                                ...doc.data()
+                            };
+                            setSelectedBusiness(business);
+                            setActivePage('profile');
+                            
+                            // Clean the URL (remove the parameter)
+                            const newUrl = window.location.pathname;
+                            window.history.replaceState({}, '', newUrl);
+                        } else {
+                            Toast.show('Business not found', 'error');
+                            setActivePage('home');
+                        }
+                    } catch (error) {
+                        console.error('Error loading business from URL:', error);
+                        Toast.show('Error loading business', 'error');
+                        setActivePage('home');
+                    }
+                    setInitialBusinessLoaded(true);
+                }
+            };
+            
+            loadBusinessFromUrl();
+        }, [initialBusinessId, initialBusinessLoaded]);
+
+        // Load all businesses on startup (public)
         React.useEffect(() => {
             loadAllBusinesses();
         }, []);
 
-        // Listen for auth state changes
+        // Listen for auth state changes (for protected features)
         React.useEffect(() => {
             const unsubscribe = auth.onAuthStateChanged(async (user) => {
                 setUser(user);
@@ -220,6 +261,11 @@
         };
 
         const handleEditBusiness = async (businessData) => {
+            if (!user) {
+                setShowAuthModal(true);
+                return;
+            }
+            
             try {
                 const { id, ...data } = businessData;
                 await db.collection('businesses').doc(id).update({
@@ -238,6 +284,11 @@
         };
 
         const handleDeleteBusiness = async (id) => {
+            if (!user) {
+                setShowAuthModal(true);
+                return;
+            }
+            
             try {
                 await db.collection('businesses').doc(id).delete();
                 
@@ -321,7 +372,7 @@
             }
         };
 
-        if (loading) {
+        if (loading && !initialBusinessLoaded) {
             return React.createElement(LoadingSpinner, { fullPage: true });
         }
 
@@ -338,19 +389,26 @@
                         onSelectBusiness: handleViewProfile
                     });
                 case 'profile':
-                    return React.createElement(ProtectedRoute, { user },
-                        React.createElement(ProfilePage, {
-                            business: selectedBusiness,
-                            onBack: () => setActivePage('directory'),
-                            currentUser: user,
-                            userData
-                        })
-                    );
+                    return React.createElement(ProfilePage, {
+                        business: selectedBusiness,
+                        onBack: () => setActivePage('directory'),
+                        currentUser: user,
+                        userData,
+                        baseUrl: BASE_URL
+                    });
                 case 'dashboard':
                     return React.createElement(ProtectedRoute, { user },
                         React.createElement(Dashboard, {
                             businesses,
-                            onNavigate: (page, business) => setActivePage(page)
+                            onNavigate: (page, business) => {
+                                if (business) {
+                                    setSelectedBusiness(business);
+                                    setActivePage(page);
+                                } else {
+                                    setActivePage(page);
+                                }
+                            },
+                            baseUrl: BASE_URL
                         })
                     );
                 case 'sub-businesses':
@@ -363,17 +421,11 @@
                             onViewProfile: handleViewProfile
                         })
                     );
-                case 'media':
-                    return React.createElement(ProtectedRoute, { user },
-                        React.createElement(MediaLibrary)
-                    );
-                case 'qr-manager':
-                    return React.createElement(ProtectedRoute, { user },
-                        React.createElement(QRManager)
-                    );
                 case 'analytics':
                     return React.createElement(ProtectedRoute, { user },
-                        React.createElement(Analytics)
+                        React.createElement(Analytics, {
+                            businesses
+                        })
                     );
                 case 'settings':
                     return React.createElement(ProtectedRoute, { user },

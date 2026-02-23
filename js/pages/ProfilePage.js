@@ -62,8 +62,8 @@
 
         // Get shareable URL
         const getBusinessUrl = () => {
-            return `${window.APP_URL || 'https://princecodes247.github.io/tapmap'}?business=${business?.id}`;
-        };
+    return `${window.APP_URL || 'https://prince123-p-byte.github.io/TapMap'}?business=${business?.id}`;
+};
 
         // Smart Directions
         const openDirections = (mode = 'drive') => {

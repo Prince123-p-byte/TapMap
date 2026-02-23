@@ -1,5 +1,5 @@
 (function() {
-    const Dashboard = ({ businesses, onNavigate }) => {
+    const Dashboard = ({ businesses, onNavigate, baseUrl = 'https://prince123-p-byte.github.io/TapMap' }) => {
         const [analytics, setAnalytics] = React.useState({
             totalViews: 0,
             totalClicks: 0,
@@ -129,7 +129,7 @@
             if (!timestamp) return 'Just now';
             try {
                 const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-                return date.toLocaleDateString();
+                return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
             } catch (e) {
                 return 'Recently';
             }
@@ -138,7 +138,7 @@
         const handleRegenerateQR = async (business) => {
             setSelectedBusiness(business);
             
-            const businessUrl = `${window.APP_URL || 'https://princecodes247.github.io/tapmap'}?business=${business.id}`;
+            const businessUrl = `${baseUrl}/?business=${business.id}`;
             
             try {
                 // Check if QRCode is available
@@ -229,7 +229,7 @@
             }
         ];
 
-        // Updated Quick Actions - Removed Upload Media and Generate QR
+        // Quick Actions - Only Add Business and View Reports
         const quickActions = [
             { icon: 'plus-circle', label: 'Add Business', color: 'bg-indigo-600', onClick: () => onNavigate('sub-businesses') },
             { icon: 'chart-line', label: 'View Reports', color: 'bg-amber-600', onClick: () => onNavigate('analytics') }
@@ -544,12 +544,12 @@
                                     )
                                 )
                             ),
-                            // QR Code Preview
+                            // QR Code Preview - Using correct base URL
                             React.createElement(
                                 'div',
                                 { className: "flex justify-center mb-4" },
                                 React.createElement('img', {
-                                    src: `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`${window.APP_URL || 'https://princecodes247.github.io/tapmap'}?business=${business.id}`)}`,
+                                    src: `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`${baseUrl}/?business=${business.id}`)}`,
                                     alt: `QR for ${business.name}`,
                                     className: "w-24 h-24 rounded-lg shadow-sm"
                                 })
@@ -682,7 +682,7 @@
                             'div',
                             { className: "inline-block p-4 bg-white rounded-2xl shadow-lg mb-4" },
                             React.createElement('img', {
-                                src: qrData || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`${window.APP_URL || 'https://princecodes247.github.io/tapmap'}?business=${selectedBusiness.id}`)}`,
+                                src: qrData || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`${baseUrl}/?business=${selectedBusiness.id}`)}`,
                                 alt: "QR Code",
                                 className: "w-40 h-40"
                             })
@@ -691,6 +691,11 @@
                             'p',
                             { className: "text-sm text-gray-500 mb-2" },
                             `QR Code for ${selectedBusiness.name}`
+                        ),
+                        React.createElement(
+                            'p',
+                            { className: "text-xs text-gray-400 break-all" },
+                            `${baseUrl}/?business=${selectedBusiness.id}`
                         )
                     ),
 

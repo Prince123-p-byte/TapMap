@@ -19,15 +19,24 @@
     }) => {
         const [isOpen, setIsOpen] = React.useState(false);
 
-        // Simplified navigation links - REMOVED Media and QR Codes
-        const navLinks = [
+        // Public navigation links - always visible
+        const publicLinks = [
             { id: 'home', label: 'Home', icon: 'home' },
             { id: 'directory', label: 'Explore', icon: 'compass' },
-            { id: 'dashboard', label: 'Dashboard', icon: 'chart-pie' },
-            { id: 'sub-businesses', label: 'My Businesses', icon: 'building' },
-            { id: 'analytics', label: 'Analytics', icon: 'chart-line' },
             { id: 'help', label: 'Help', icon: 'question-circle' }
         ];
+
+        // Protected navigation links - only visible when logged in
+        const protectedLinks = [
+            { id: 'dashboard', label: 'Dashboard', icon: 'chart-pie' },
+            { id: 'sub-businesses', label: 'My Businesses', icon: 'building' },
+            { id: 'analytics', label: 'Analytics', icon: 'chart-line' }
+        ];
+
+        // Combine based on auth status
+        const navLinks = user 
+            ? [...publicLinks, ...protectedLinks]
+            : publicLinks;
 
         const handleNotificationClick = (notif) => {
             onMarkAsRead(notif.id);
@@ -69,7 +78,7 @@
                         )
                     ),
 
-                    // Desktop Navigation - Updated with simplified links
+                    // Desktop Navigation
                     React.createElement(
                         'div',
                         { className: "hidden md:flex items-center space-x-1" },
@@ -102,7 +111,7 @@
                         user ? React.createElement(
                             React.Fragment,
                             null,
-                            // Notifications
+                            // Notifications (only for logged in users)
                             React.createElement(
                                 'div',
                                 { className: "relative" },
@@ -268,6 +277,14 @@
                                     className: "bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-all"
                                 },
                                 "Sign In"
+                            ),
+                            React.createElement(
+                                'button',
+                                {
+                                    onClick: onShowAuth,
+                                    className: "ml-2 text-gray-600 hover:text-gray-900 px-4 py-2 text-sm font-medium"
+                                },
+                                "Sign Up"
                             )
                         )
                     ),
@@ -290,7 +307,7 @@
                 )
             ),
 
-            // Mobile Navigation Menu - Updated with simplified links
+            // Mobile Navigation Menu
             isOpen && React.createElement(
                 'div',
                 { className: "md:hidden bg-white border-b border-gray-100 py-4 px-4 space-y-2 animate-slide-down" },

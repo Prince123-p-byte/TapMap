@@ -18,7 +18,7 @@ const db = firebase.firestore();
 const storage = firebase.storage();
 
 // GitHub Pages URL for sharing
-const APP_URL = "https://princecodes247.github.io/tapmap"; // Replace with your actual GitHub Pages URL
+const APP_URL = "https://prince123-p-byte.github.io/TapMap"; // Replace with your actual GitHub Pages URL
 
 // Enable persistence
 db.enablePersistence()
