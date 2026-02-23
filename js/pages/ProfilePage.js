@@ -1,28 +1,160 @@
 (function() {
-    const ProfilePage = ({ business, onBack, currentUser, userData }) => {
+    const ProfilePage = ({ business, onBack, currentUser, userData, baseUrl }) => {
         const [activeTab, setActiveTab] = React.useState('about');
         const [contactMessage, setContactMessage] = React.useState('');
         const [distance, setDistance] = React.useState(null);
         const [isOwner, setIsOwner] = React.useState(false);
+        const [reviews, setReviews] = React.useState([]);
+        const [newReview, setNewReview] = React.useState({ rating: 5, comment: '' });
+        const [userReview, setUserReview] = React.useState(null);
+        const [loadingReviews, setLoadingReviews] = React.useState(false);
+        const [submittingReview, setSubmittingReview] = React.useState(false);
 
-        // Helper function to safely format location
+        // Format location safely
         const formatLocation = (location) => {
             if (!location) return 'Location not specified';
             if (typeof location === 'string') return location;
             if (typeof location === 'object') {
-                // If it's a location object with lat/lng, format it nicely
                 if (location.lat && location.lng) {
                     return `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`;
                 }
-                // If it has address property
                 if (location.address) return location.address;
                 return 'Location available';
             }
             return String(location);
         };
 
+        // Load reviews when component mounts
         React.useEffect(() => {
-            // Check if current user owns this business
+            if (business?.id) {
+                loadReviews();
+            }
+        }, [business?.id]);
+
+        // Load reviews from Firebase with error handling
+        const loadReviews = async () => {
+            setLoadingReviews(true);
+            try {
+                // First try with orderBy
+                let snapshot;
+                try {
+                    snapshot = await db.collection('reviews')
+                        .where('businessId', '==', business.id)
+                        .orderBy('createdAt', 'desc')
+                        .get();
+                } catch (indexError) {
+                    // If index error, try without orderBy
+                    console.log('Index not ready, loading without order');
+                    snapshot = await db.collection('reviews')
+                        .where('businessId', '==', business.id)
+                        .get();
+                }
+
+                const reviewsData = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                // Sort manually if no index
+                reviewsData.sort((a, b) => {
+                    const dateA = a.createdAt?.toDate?.() || new Date(0);
+                    const dateB = b.createdAt?.toDate?.() || new Date(0);
+                    return dateB - dateA;
+                });
+
+                setReviews(reviewsData);
+
+                // Check if current user has already reviewed
+                if (currentUser) {
+                    const userReview = reviewsData.find(r => r.userId === currentUser.uid);
+                    if (userReview) {
+                        setUserReview(userReview);
+                        setNewReview({ rating: userReview.rating, comment: userReview.comment });
+                    }
+                }
+
+                // Update business rating
+                if (reviewsData.length > 0) {
+                    const avgRating = reviewsData.reduce((sum, r) => sum + r.rating, 0) / reviewsData.length;
+                    await db.collection('businesses').doc(business.id).update({
+                        rating: avgRating,
+                        reviews: reviewsData.length
+                    }).catch(console.error);
+                }
+            } catch (error) {
+                console.error('Error loading reviews:', error);
+                Toast.show('Error loading reviews', 'error');
+            } finally {
+                setLoadingReviews(false);
+            }
+        };
+
+        // Submit a review
+        const handleSubmitReview = async () => {
+            if (!currentUser) {
+                Toast.show('Please sign in to leave a review', 'info');
+                window.dispatchEvent(new CustomEvent('openAuthModal'));
+                return;
+            }
+
+            if (!newReview.comment.trim()) {
+                Toast.show('Please write a comment', 'error');
+                return;
+            }
+
+            setSubmittingReview(true);
+            try {
+                const reviewData = {
+                    businessId: business.id,
+                    userId: currentUser.uid,
+                    userName: userData?.name || currentUser.displayName || 'Anonymous',
+                    userPhoto: currentUser.photoURL || null,
+                    rating: newReview.rating,
+                    comment: newReview.comment,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+
+                if (userReview) {
+                    // Update existing review
+                    await db.collection('reviews').doc(userReview.id).update(reviewData);
+                    Toast.show('Review updated successfully', 'success');
+                } else {
+                    // Create new review
+                    await db.collection('reviews').add(reviewData);
+                    Toast.show('Review posted successfully', 'success');
+                }
+
+                // Reload reviews
+                await loadReviews();
+                setNewReview({ rating: 5, comment: '' });
+            } catch (error) {
+                console.error('Error submitting review:', error);
+                Toast.show(error.message || 'Error posting review', 'error');
+            } finally {
+                setSubmittingReview(false);
+            }
+        };
+
+        // Delete a review
+        const handleDeleteReview = async () => {
+            if (!userReview) return;
+            
+            if (confirm('Delete your review?')) {
+                try {
+                    await db.collection('reviews').doc(userReview.id).delete();
+                    await loadReviews();
+                    setUserReview(null);
+                    setNewReview({ rating: 5, comment: '' });
+                    Toast.show('Review deleted', 'warning');
+                } catch (error) {
+                    console.error('Error deleting review:', error);
+                    Toast.show('Error deleting review', 'error');
+                }
+            }
+        };
+
+        // Check if current user owns this business
+        React.useEffect(() => {
             if (currentUser && business && business.userId === currentUser.uid) {
                 setIsOwner(true);
             }
@@ -62,8 +194,8 @@
 
         // Get shareable URL
         const getBusinessUrl = () => {
-    return `${window.APP_URL || 'https://prince123-p-byte.github.io/TapMap'}?business=${business?.id}`;
-};
+            return `${baseUrl || 'https://prince123-p-byte.github.io/TapMap'}/?business=${business?.id}`;
+        };
 
         // Smart Directions
         const openDirections = (mode = 'drive') => {
@@ -179,7 +311,7 @@
         const tabs = [
             { id: 'about', label: 'About' },
             { id: 'gallery', label: 'Gallery' },
-            { id: 'reviews', label: 'Reviews' },
+            { id: 'reviews', label: `Reviews (${reviews.length})` },
             { id: 'contact', label: 'Contact' }
         ];
 
@@ -196,7 +328,6 @@
             );
         }
 
-        // Get display location safely
         const displayLocation = formatLocation(business.location || business.address || 'Location not specified');
 
         return React.createElement(
@@ -209,7 +340,8 @@
                 React.createElement('img', {
                     src: business.coverImage || 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=1200',
                     className: "w-full h-full object-cover",
-                    alt: "Cover"
+                    alt: "Cover",
+                    onError: (e) => { e.target.src = 'https://via.placeholder.com/1200x400?text=No+Cover'; }
                 }),
                 React.createElement('div', { className: "absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" }),
                 
@@ -245,11 +377,18 @@
                         React.createElement(
                             'div',
                             { className: "flex gap-4 md:gap-6 items-center w-full md:w-auto" },
-                            // Logo
+                            // Logo / Profile Photo
                             React.createElement(
                                 'div',
-                                { className: "w-16 h-16 md:w-24 md:h-24 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-white text-2xl md:text-4xl font-black shadow-lg flex-shrink-0" },
-                                business.logo || business.name?.charAt(0).toUpperCase()
+                                { className: "w-16 h-16 md:w-24 md:h-24 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-white text-2xl md:text-4xl font-black shadow-lg flex-shrink-0 overflow-hidden" },
+                                business.logo ? 
+                                    React.createElement('img', { 
+                                        src: business.logo, 
+                                        alt: business.name,
+                                        className: "w-full h-full object-cover",
+                                        onError: (e) => { e.target.src = ''; }
+                                    }) :
+                                    (business.name?.charAt(0).toUpperCase() || 'B')
                             ),
                             // Basic Info
                             React.createElement(
@@ -276,7 +415,7 @@
                                     business.category,
                                     React.createElement('span', { className: "w-1 h-1 bg-gray-300 rounded-full" }),
                                     React.createElement(Icon, { name: "map-marker-alt", size: 12 }),
-                                    displayLocation // FIXED: Using formatted string instead of raw object
+                                    displayLocation
                                 ),
                                 React.createElement(
                                     'div',
@@ -285,7 +424,7 @@
                                         'div',
                                         { className: "flex items-center gap-1" },
                                         React.createElement(Icon, { name: "star", size: 16, className: "text-amber-400 fill-current" }),
-                                        React.createElement('span', { className: "font-bold text-sm md:text-base" }, business.rating || '5.0'),
+                                        React.createElement('span', { className: "font-bold text-sm md:text-base" }, (business.rating || 0).toFixed(1)),
                                         React.createElement('span', { className: "text-gray-400 text-xs" }, `(${business.reviews || 0})`)
                                     ),
                                     React.createElement(
@@ -428,7 +567,7 @@
                     { className: "bg-white rounded-xl p-6 border border-gray-100" },
                     React.createElement(
                         'div',
-                        { className: "grid grid-cols-2 md:grid-cols-3 gap-4" },
+                        { className: "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" },
                         (business.images && business.images.length > 0 ? business.images : [
                             'https://images.unsplash.com/photo-1544161515-4af6b1d462c2?auto=format&fit=crop&q=80&w=800',
                             'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=800',
@@ -436,12 +575,160 @@
                         ]).map((img, i) =>
                             React.createElement(
                                 'div',
-                                { key: i, className: "aspect-square rounded-xl overflow-hidden cursor-pointer" },
+                                { 
+                                    key: i, 
+                                    className: "aspect-square rounded-xl overflow-hidden cursor-pointer group",
+                                    onClick: () => window.open(img, '_blank')
+                                },
                                 React.createElement('img', {
                                     src: img,
                                     className: "w-full h-full object-cover hover:scale-110 transition-transform duration-500",
-                                    alt: "Gallery"
+                                    alt: `Gallery ${i + 1}`,
+                                    onError: (e) => { e.target.src = 'https://via.placeholder.com/400x400?text=Image+Not+Found'; }
                                 })
+                            )
+                        )
+                    )
+                ),
+
+                activeTab === 'reviews' && React.createElement(
+                    'div',
+                    { className: "bg-white rounded-xl p-6 border border-gray-100" },
+                    // Review Form
+                    React.createElement(
+                        'div',
+                        { className: "mb-8 p-6 bg-gray-50 rounded-xl" },
+                        React.createElement('h3', { className: "font-bold mb-4" }, 
+                            userReview ? 'Edit Your Review' : 'Write a Review'
+                        ),
+                        // Rating Stars
+                        React.createElement(
+                            'div',
+                            { className: "flex gap-2 mb-4" },
+                            [1, 2, 3, 4, 5].map(star =>
+                                React.createElement(
+                                    'button',
+                                    {
+                                        key: star,
+                                        type: "button",
+                                        onClick: () => setNewReview({ ...newReview, rating: star }),
+                                        className: `text-2xl transition-colors ${
+                                            star <= newReview.rating ? 'text-amber-400' : 'text-gray-300'
+                                        } hover:text-amber-500`
+                                    },
+                                    '★'
+                                )
+                            )
+                        ),
+                        // Review Comment
+                        React.createElement(
+                            'textarea',
+                            {
+                                value: newReview.comment,
+                                onChange: (e) => setNewReview({ ...newReview, comment: e.target.value }),
+                                placeholder: "Share your experience...",
+                                className: "w-full p-4 border border-gray-200 rounded-xl mb-4",
+                                rows: "4"
+                            }
+                        ),
+                        // Submit Button
+                        React.createElement(
+                            'div',
+                            { className: "flex gap-3" },
+                            React.createElement(
+                                'button',
+                                {
+                                    onClick: handleSubmitReview,
+                                    disabled: !newReview.comment.trim() || submittingReview,
+                                    className: `bg-indigo-600 text-white px-6 py-3 rounded-xl font-medium hover:bg-indigo-700 transition-all flex items-center gap-2 ${
+                                        !newReview.comment.trim() || submittingReview ? 'opacity-50 cursor-not-allowed' : ''
+                                    }`
+                                },
+                                submittingReview && React.createElement(Icon, { name: "spinner", className: "animate-spin" }),
+                                submittingReview ? 'Posting...' : (userReview ? 'Update Review' : 'Submit Review')
+                            ),
+                            userReview && React.createElement(
+                                'button',
+                                {
+                                    onClick: handleDeleteReview,
+                                    className: "bg-red-50 text-red-600 px-6 py-3 rounded-xl font-medium hover:bg-red-100 transition-all"
+                                },
+                                "Delete"
+                            )
+                        )
+                    ),
+
+                    // Reviews List
+                    React.createElement(
+                        'div',
+                        { className: "space-y-6" },
+                        loadingReviews ? React.createElement(LoadingSpinner) :
+                        reviews.length === 0 ? React.createElement(
+                            'div',
+                            { className: "text-center py-8 text-gray-500" },
+                            React.createElement(Icon, { name: "star", size: 32, className: "mx-auto mb-2 opacity-50" }),
+                            React.createElement('p', null, "No reviews yet. Be the first to review!")
+                        ) :
+                        reviews.map(review =>
+                            React.createElement(
+                                'div',
+                                { key: review.id, className: "border-b border-gray-100 last:border-0 pb-6 last:pb-0" },
+                                React.createElement(
+                                    'div',
+                                    { className: "flex items-start gap-4 mb-3" },
+                                    // User Avatar
+                                    React.createElement(
+                                        'div',
+                                        { className: "w-10 h-10 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white flex items-center justify-center font-bold flex-shrink-0 overflow-hidden" },
+                                        review.userPhoto ?
+                                            React.createElement('img', { 
+                                                src: review.userPhoto, 
+                                                alt: review.userName,
+                                                className: "w-full h-full object-cover"
+                                            }) :
+                                            (review.userName?.charAt(0).toUpperCase() || 'U')
+                                    ),
+                                    React.createElement(
+                                        'div',
+                                        { className: "flex-1" },
+                                        React.createElement(
+                                            'div',
+                                            { className: "flex flex-wrap items-center justify-between gap-2 mb-1" },
+                                            React.createElement(
+                                                'h4',
+                                                { className: "font-medium text-gray-900" },
+                                                review.userName
+                                            ),
+                                            React.createElement(
+                                                'div',
+                                                { className: "flex gap-1" },
+                                                [1, 2, 3, 4, 5].map(star =>
+                                                    React.createElement(
+                                                        'span',
+                                                        { key: star, className: star <= review.rating ? 'text-amber-400' : 'text-gray-300' },
+                                                        '★'
+                                                    )
+                                                )
+                                            )
+                                        ),
+                                        React.createElement(
+                                            'p',
+                                            { className: "text-xs text-gray-400 mb-2" },
+                                            review.createdAt?.toDate ? 
+                                                new Date(review.createdAt.toDate()).toLocaleDateString('en-US', { 
+                                                    year: 'numeric', 
+                                                    month: 'long', 
+                                                    day: 'numeric' 
+                                                }) : 
+                                                'Just now'
+                                        ),
+                                        React.createElement(
+                                            'p',
+                                            { className: "text-gray-600 text-sm" },
+                                            review.comment
+                                        )
+                                    )
+                                )
                             )
                         )
                     )
@@ -498,19 +785,6 @@
                                 React.createElement('div', { className: "font-medium text-sm" }, business.email)
                             )
                         )
-                    )
-                ),
-
-                activeTab === 'reviews' && React.createElement(
-                    'div',
-                    { className: "bg-white rounded-xl p-6 border border-gray-100 text-center" },
-                    React.createElement(Icon, { name: "star", size: 32, className: "text-gray-300 mx-auto mb-3" }),
-                    React.createElement('h3', { className: "font-bold mb-2" }, "No reviews yet"),
-                    React.createElement('p', { className: "text-sm text-gray-500 mb-4" }, "Be the first to review this business"),
-                    React.createElement(
-                        'button',
-                        { className: "bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-all" },
-                        "Write a Review"
                     )
                 )
             ),

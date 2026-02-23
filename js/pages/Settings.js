@@ -1,155 +1,183 @@
 (function() {
-    const Settings = () => {
-        const [user, setUser] = React.useState(null);
-        const [userData, setUserData] = React.useState(null);
-        const [loading, setLoading] = React.useState(true);
-        const [saving, setSaving] = React.useState(false);
+    const Settings = ({ user, userData, onUpdateProfile, onLogout }) => {
         const [activeTab, setActiveTab] = React.useState('profile');
+        const [loading, setLoading] = React.useState(false);
+        const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
+        const [profilePhoto, setProfilePhoto] = React.useState(user?.photoURL || userData?.photoURL || null);
+        const [formData, setFormData] = React.useState({
+            name: userData?.name || '',
+            companyName: userData?.companyName || '',
+            phone: userData?.phone || '',
+            email: user?.email || ''
+        });
 
-        React.useEffect(() => {
-            loadUserData();
-        }, []);
+        // Handle form input changes
+        const handleChange = (e) => {
+            setFormData({
+                ...formData,
+                [e.target.name]: e.target.value
+            });
+        };
 
-        const loadUserData = async () => {
-            try {
-                const currentUser = auth.currentUser;
-                if (!currentUser) return;
+        // Updated profile photo upload function - works like business logo
+        const handleProfilePhotoUpload = (files) => {
+            if (files.length === 0) return;
+            
+            const file = files[0];
+            if (!file.type.startsWith('image/')) {
+                Toast.show('Please select an image file', 'error');
+                return;
+            }
 
-                setUser(currentUser);
+            setUploadingPhoto(true);
+            
+            // Show preview immediately
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                // Set the local preview first
+                setProfilePhoto(e.target.result);
                 
-                const doc = await db.collection('users').doc(currentUser.uid).get();
-                if (doc.exists) {
-                    setUserData(doc.data());
+                // Try to upload to Firebase Storage, but don't fail if it doesn't work
+                try {
+                    const storageRef = storage.ref();
+                    // Sanitize filename
+                    const safeFileName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
+                    const fileName = `profiles/${user.uid}_${Date.now()}_${safeFileName}`;
+                    const imageRef = storageRef.child(fileName);
+                    
+                    // Upload with metadata
+                    const metadata = {
+                        contentType: file.type,
+                        customMetadata: {
+                            'uploadedBy': user.uid,
+                            'uploadedAt': new Date().toISOString()
+                        }
+                    };
+                    
+                    imageRef.put(file, metadata).then(() => {
+                        return imageRef.getDownloadURL();
+                    }).then(async (downloadURL) => {
+                        // Update with the actual Firebase Storage URL
+                        setProfilePhoto(downloadURL);
+                        
+                        // Update user profile in Firebase Auth
+                        await user.updateProfile({
+                            photoURL: downloadURL
+                        });
+
+                        // Update user data in Firestore
+                        await db.collection('users').doc(user.uid).update({
+                            photoURL: downloadURL,
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                        
+                        console.log('Profile photo uploaded to Firebase:', downloadURL);
+                        Toast.show('Profile photo uploaded successfully', 'success');
+                    }).catch(err => {
+                        // If Firebase upload fails, keep the local preview
+                        console.log('Firebase upload failed, using local preview only:', err);
+                        Toast.show('Profile photo saved locally', 'success');
+                    });
+                } catch (err) {
+                    console.log('Firebase upload error:', err);
+                    Toast.show('Profile photo saved locally', 'success');
+                } finally {
+                    setUploadingPhoto(false);
                 }
+            };
+            reader.readAsDataURL(file);
+        };
+
+        // Handle profile update
+        const handleProfileSubmit = async (e) => {
+            e.preventDefault();
+            setLoading(true);
+            
+            try {
+                await onUpdateProfile({
+                    name: formData.name,
+                    companyName: formData.companyName,
+                    phone: formData.phone
+                });
+                Toast.show('Profile updated successfully', 'success');
             } catch (error) {
-                console.error('Error loading user data:', error);
-                Toast.show('Error loading settings', 'error');
+                console.error('Error updating profile:', error);
+                Toast.show(error.message, 'error');
             } finally {
                 setLoading(false);
             }
         };
 
-        const handleProfileUpdate = async (e) => {
+        // Handle password change
+        const handlePasswordSubmit = async (e) => {
             e.preventDefault();
-            setSaving(true);
+            const formData = new FormData(e.target);
+            const currentPassword = formData.get('currentPassword');
+            const newPassword = formData.get('newPassword');
+            const confirmPassword = formData.get('confirmPassword');
 
-            try {
-                const formData = new FormData(e.target);
-                const updates = {
-                    name: formData.get('name'),
-                    companyName: formData.get('companyName'),
-                    phone: formData.get('phone'),
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                };
-
-                await db.collection('users').doc(user.uid).update(updates);
-                
-                // Update auth profile
-                if (user.displayName !== updates.name) {
-                    await user.updateProfile({
-                        displayName: updates.name
-                    });
-                }
-
-                Toast.show('Profile updated successfully', 'success');
-                loadUserData();
-            } catch (error) {
-                console.error('Error updating profile:', error);
-                Toast.show(error.message, 'error');
-            } finally {
-                setSaving(false);
+            if (newPassword !== confirmPassword) {
+                Toast.show('New passwords do not match', 'error');
+                return;
             }
-        };
 
-        const handlePasswordChange = async (e) => {
-            e.preventDefault();
-            setSaving(true);
-
+            setLoading(true);
             try {
-                const formData = new FormData(e.target);
-                const currentPassword = formData.get('currentPassword');
-                const newPassword = formData.get('newPassword');
-                const confirmPassword = formData.get('confirmPassword');
-
-                if (newPassword !== confirmPassword) {
-                    throw new Error('New passwords do not match');
-                }
-
-                // Re-authenticate user
                 const credential = firebase.auth.EmailAuthProvider.credential(
                     user.email,
                     currentPassword
                 );
                 await user.reauthenticateWithCredential(credential);
-
-                // Update password
                 await user.updatePassword(newPassword);
-
                 Toast.show('Password updated successfully', 'success');
                 e.target.reset();
             } catch (error) {
                 console.error('Error updating password:', error);
                 Toast.show(error.message, 'error');
             } finally {
-                setSaving(false);
+                setLoading(false);
             }
         };
 
-        const handleNotificationUpdate = async (settings) => {
-            setSaving(true);
+        // Handle notification settings update
+        const handleNotificationChange = async (settingId, checked) => {
             try {
+                const newSettings = {
+                    ...userData?.settings,
+                    notifications: {
+                        ...userData?.settings?.notifications,
+                        [settingId]: checked
+                    }
+                };
                 await db.collection('users').doc(user.uid).update({
-                    'settings.notifications': settings
+                    settings: newSettings
                 });
-                Toast.show('Notification settings updated', 'success');
-                loadUserData();
+                Toast.show('Settings updated', 'success');
             } catch (error) {
-                console.error('Error updating notifications:', error);
-                Toast.show(error.message, 'error');
-            } finally {
-                setSaving(false);
+                console.error('Error updating settings:', error);
+                Toast.show('Error updating settings', 'error');
             }
         };
 
+        // Handle account deletion
         const handleDeleteAccount = async () => {
-            if (!confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
-                return;
-            }
-
-            try {
-                // Delete user data from Firestore
-                await db.collection('users').doc(user.uid).delete();
-                
-                // Delete businesses owned by user
-                const businesses = await db.collection('businesses')
-                    .where('userId', '==', user.uid)
-                    .get();
-                
-                const batch = db.batch();
-                businesses.docs.forEach(doc => batch.delete(doc.ref));
-                await batch.commit();
-
-                // Delete user auth account
-                await user.delete();
-
-                Toast.show('Account deleted successfully', 'warning');
-                auth.signOut();
-            } catch (error) {
-                console.error('Error deleting account:', error);
-                Toast.show(error.message, 'error');
+            if (confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
+                try {
+                    await db.collection('users').doc(user.uid).delete();
+                    await user.delete();
+                    onLogout();
+                    Toast.show('Account deleted', 'warning');
+                } catch (error) {
+                    console.error('Error deleting account:', error);
+                    Toast.show(error.message, 'error');
+                }
             }
         };
-
-        if (loading) {
-            return React.createElement(LoadingSpinner, { fullPage: true });
-        }
 
         const tabs = [
             { id: 'profile', label: 'Profile', icon: 'user' },
             { id: 'security', label: 'Security', icon: 'lock' },
-            { id: 'notifications', label: 'Notifications', icon: 'bell' },
-            { id: 'billing', label: 'Billing', icon: 'credit-card' },
-            { id: 'team', label: 'Team', icon: 'users' }
+            { id: 'notifications', label: 'Notifications', icon: 'bell' }
         ];
 
         return React.createElement(
@@ -185,8 +213,8 @@
                         'div',
                         { className: "lg:col-span-1" },
                         React.createElement(
-                            ModernCard,
-                            { className: "p-4" },
+                            'div',
+                            { className: "bg-white rounded-2xl p-4 shadow-sm border border-gray-100" },
                             tabs.map(tab =>
                                 React.createElement(
                                     'button',
@@ -211,8 +239,8 @@
                         'div',
                         { className: "lg:col-span-3" },
                         React.createElement(
-                            ModernCard,
-                            { className: "p-8" },
+                            'div',
+                            { className: "bg-white rounded-2xl p-8 shadow-sm border border-gray-100" },
                             
                             // Profile Settings
                             activeTab === 'profile' && React.createElement(
@@ -223,59 +251,89 @@
                                     { className: "text-xl font-bold mb-6" },
                                     "Profile Information"
                                 ),
+                                
+                                // Profile Photo Upload - Fixed version
                                 React.createElement(
-                                    'form',
-                                    { onSubmit: handleProfileUpdate, className: "space-y-6" },
+                                    'div',
+                                    { className: "mb-8" },
+                                    React.createElement('label', { className: "form-label" }, "Profile Photo"),
                                     React.createElement(
                                         'div',
-                                        { className: "flex items-center gap-6 mb-6" },
+                                        { className: "flex flex-col sm:flex-row items-center gap-6" },
                                         React.createElement(
                                             'div',
                                             { className: "relative" },
                                             React.createElement(
                                                 'div',
-                                                { className: "w-24 h-24 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center justify-center text-3xl font-bold" },
-                                                userData?.name?.charAt(0) || user?.email?.charAt(0) || 'U'
+                                                { className: "w-24 h-24 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center justify-center text-3xl font-bold overflow-hidden" },
+                                                profilePhoto ?
+                                                    React.createElement('img', {
+                                                        src: profilePhoto,
+                                                        alt: "Profile",
+                                                        className: "w-full h-full object-cover"
+                                                    }) :
+                                                    (formData.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'U')
                                             ),
-                                            React.createElement(
-                                                'button',
-                                                {
-                                                    type: "button",
-                                                    className: "absolute -bottom-2 -right-2 w-8 h-8 bg-white rounded-full border border-gray-200 flex items-center justify-center text-gray-500 hover:text-indigo-600 hover:border-indigo-600 transition-all"
-                                                },
-                                                React.createElement(Icon, { name: "camera", size: 14 })
+                                            uploadingPhoto && React.createElement(
+                                                'div',
+                                                { className: "absolute inset-0 bg-black/50 rounded-full flex items-center justify-center" },
+                                                React.createElement('div', { className: "spinner w-6 h-6" })
                                             )
                                         ),
                                         React.createElement(
                                             'div',
-                                            null,
-                                            React.createElement('h3', { className: "font-bold" }, userData?.name || 'User'),
-                                            React.createElement('p', { className: "text-sm text-gray-500" }, user?.email)
+                                            { className: "flex-1 w-full relative" },
+                                            React.createElement(DropZone, {
+                                                onDrop: handleProfilePhotoUpload,
+                                                accept: "image/*",
+                                                multiple: false
+                                            }),
+                                            React.createElement(
+                                                'p',
+                                                { className: "text-xs text-gray-400 mt-2 text-center sm:text-left" },
+                                                "Upload a square image for best results. Max size 5MB."
+                                            )
                                         )
-                                    ),
+                                    )
+                                ),
 
+                                React.createElement(
+                                    'form',
+                                    {
+                                        onSubmit: handleProfileSubmit,
+                                        className: "space-y-6"
+                                    },
                                     React.createElement(FormInput, {
                                         label: "Full Name",
                                         name: "name",
-                                        defaultValue: userData?.name || '',
+                                        value: formData.name,
+                                        onChange: handleChange,
                                         icon: "user"
                                     }),
-
                                     React.createElement(FormInput, {
                                         label: "Company Name",
                                         name: "companyName",
-                                        defaultValue: userData?.companyName || '',
+                                        value: formData.companyName,
+                                        onChange: handleChange,
                                         icon: "building"
                                     }),
-
                                     React.createElement(FormInput, {
                                         label: "Phone Number",
                                         name: "phone",
                                         type: "tel",
-                                        defaultValue: userData?.phone || '',
+                                        value: formData.phone,
+                                        onChange: handleChange,
                                         icon: "phone"
                                     }),
-
+                                    React.createElement(FormInput, {
+                                        label: "Email Address",
+                                        name: "email",
+                                        type: "email",
+                                        value: formData.email,
+                                        disabled: true,
+                                        icon: "envelope",
+                                        className: "bg-gray-50 cursor-not-allowed"
+                                    }),
                                     React.createElement(
                                         'div',
                                         { className: "flex justify-end gap-4 pt-4 border-t border-gray-100" },
@@ -284,7 +342,7 @@
                                             {
                                                 type: "submit",
                                                 icon: "save",
-                                                loading: saving
+                                                loading
                                             },
                                             "Save Changes"
                                         )
@@ -303,7 +361,10 @@
                                 ),
                                 React.createElement(
                                     'form',
-                                    { onSubmit: handlePasswordChange, className: "space-y-6 max-w-md" },
+                                    {
+                                        onSubmit: handlePasswordSubmit,
+                                        className: "space-y-6 max-w-md"
+                                    },
                                     React.createElement(FormInput, {
                                         label: "Current Password",
                                         name: "currentPassword",
@@ -333,7 +394,7 @@
                                             {
                                                 type: "submit",
                                                 icon: "key",
-                                                loading: saving
+                                                loading
                                             },
                                             "Update Password"
                                         )
@@ -392,145 +453,12 @@
                                                 React.createElement('input', {
                                                     type: "checkbox",
                                                     className: "sr-only peer",
-                                                    defaultChecked: true,
-                                                    onChange: (e) => handleNotificationUpdate({
-                                                        ...userData?.settings?.notifications,
-                                                        [setting.id]: e.target.checked
-                                                    })
+                                                    defaultChecked: userData?.settings?.notifications?.[setting.id] ?? true,
+                                                    onChange: (e) => handleNotificationChange(setting.id, e.target.checked)
                                                 }),
                                                 React.createElement('div', {
                                                     className: "w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"
                                                 })
-                                            )
-                                        )
-                                    )
-                                )
-                            ),
-
-                            // Billing Settings
-                            activeTab === 'billing' && React.createElement(
-                                'div',
-                                null,
-                                React.createElement(
-                                    'h2',
-                                    { className: "text-xl font-bold mb-6" },
-                                    "Billing & Subscription"
-                                ),
-                                React.createElement(
-                                    'div',
-                                    { className: "bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-8 rounded-2xl mb-6" },
-                                    React.createElement(
-                                        'div',
-                                        { className: "flex justify-between items-start" },
-                                        React.createElement(
-                                            'div',
-                                            null,
-                                            React.createElement('p', { className: "text-indigo-100 mb-2" }, "Current Plan"),
-                                            React.createElement('h3', { className: "text-3xl font-bold mb-2" }, "Pro Business"),
-                                            React.createElement('p', { className: "text-indigo-100" }, "$29/month")
-                                        ),
-                                        React.createElement(
-                                            'button',
-                                            {
-                                                onClick: () => Toast.show('Upgrade options coming soon'),
-                                                className: "bg-white/20 backdrop-blur px-4 py-2 rounded-lg hover:bg-white/30 transition-all"
-                                            },
-                                            "Upgrade"
-                                        )
-                                    )
-                                ),
-                                React.createElement(
-                                    'div',
-                                    { className: "space-y-4" },
-                                    [
-                                        { date: 'Mar 1, 2024', amount: '$29.00', status: 'Paid' },
-                                        { date: 'Feb 1, 2024', amount: '$29.00', status: 'Paid' },
-                                        { date: 'Jan 1, 2024', amount: '$29.00', status: 'Paid' }
-                                    ].map((invoice, i) =>
-                                        React.createElement(
-                                            'div',
-                                            { key: i, className: "flex items-center justify-between p-4 bg-gray-50 rounded-xl" },
-                                            React.createElement(
-                                                'div',
-                                                { className: "flex items-center gap-4" },
-                                                React.createElement(Icon, { name: "file-invoice", className: "text-gray-400" }),
-                                                React.createElement(
-                                                    'div',
-                                                    null,
-                                                    React.createElement('p', { className: "font-medium" }, invoice.date),
-                                                    React.createElement('p', { className: "text-sm text-gray-500" }, invoice.amount)
-                                                )
-                                            ),
-                                            React.createElement(
-                                                'div',
-                                                { className: "flex items-center gap-3" },
-                                                React.createElement(Badge, { type: "success" }, invoice.status),
-                                                React.createElement(
-                                                    'button',
-                                                    { className: "text-indigo-600 hover:text-indigo-700" },
-                                                    React.createElement(Icon, { name: "download", size: 16 })
-                                                )
-                                            )
-                                        )
-                                    )
-                                )
-                            ),
-
-                            // Team Settings
-                            activeTab === 'team' && React.createElement(
-                                'div',
-                                null,
-                                React.createElement(
-                                    'div',
-                                    { className: "flex justify-between items-center mb-6" },
-                                    React.createElement(
-                                        'h2',
-                                        { className: "text-xl font-bold" },
-                                        "Team Members"
-                                    ),
-                                    React.createElement(
-                                        'button',
-                                        {
-                                            onClick: () => Toast.show('Invite team members coming soon'),
-                                            className: "bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-all flex items-center gap-2"
-                                        },
-                                        React.createElement(Icon, { name: "plus", size: 14 }),
-                                        "Invite Member"
-                                    )
-                                ),
-                                React.createElement(
-                                    'div',
-                                    { className: "space-y-4" },
-                                    [
-                                        { name: 'You', email: user?.email, role: 'Owner', status: 'Active' }
-                                    ].concat(userData?.team || []).map((member, i) =>
-                                        React.createElement(
-                                            'div',
-                                            { key: i, className: "flex items-center justify-between p-4 bg-gray-50 rounded-xl" },
-                                            React.createElement(
-                                                'div',
-                                                { className: "flex items-center gap-4" },
-                                                React.createElement(
-                                                    'div',
-                                                    { className: "w-10 h-10 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold" },
-                                                    member.name?.charAt(0) || 'U'
-                                                ),
-                                                React.createElement(
-                                                    'div',
-                                                    null,
-                                                    React.createElement('p', { className: "font-medium" }, member.name),
-                                                    React.createElement('p', { className: "text-sm text-gray-500" }, member.email)
-                                                )
-                                            ),
-                                            React.createElement(
-                                                'div',
-                                                { className: "flex items-center gap-3" },
-                                                React.createElement(Badge, { type: "success" }, member.status),
-                                                member.role !== 'Owner' && React.createElement(
-                                                    'button',
-                                                    { className: "text-gray-400 hover:text-red-600 transition-colors" },
-                                                    React.createElement(Icon, { name: "trash", size: 16 })
-                                                )
                                             )
                                         )
                                     )

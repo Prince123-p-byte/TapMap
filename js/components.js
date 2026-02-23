@@ -242,6 +242,7 @@ const FormTextarea = ({ label, name, value, onChange, required, rows = 4, placeh
 };
 
 // DropZone Component
+// DropZone Component - Updated to handle single files
 const DropZone = ({ onDrop, accept = 'image/*', multiple = true }) => {
     const [dragging, setDragging] = React.useState(false);
     const fileInputRef = React.useRef(null);
@@ -291,7 +292,7 @@ const DropZone = ({ onDrop, accept = 'image/*', multiple = true }) => {
             React.createElement(
                 'p',
                 { className: "text-gray-600 font-medium mb-2" },
-                "Drag and drop files here, or "
+                "Drag and drop " + (multiple ? "files" : "a file") + " here, or "
             ),
             React.createElement(
                 'span',
