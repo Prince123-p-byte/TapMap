@@ -1,4 +1,4 @@
-// Firebase Configuration - REPLACE WITH YOUR ACTUAL CONFIG
+// Firebase Configuration
 const firebaseConfig = {
   apiKey: "AIzaSyC07qBPE1gsAFckEEbwvhCouhfCN4dcniU",
   authDomain: "tapmap-a7e1d.firebaseapp.com",
@@ -17,6 +17,9 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 const storage = firebase.storage();
 
+// GitHub Pages URL for sharing
+const APP_URL = "https://princecodes247.github.io/tapmap"; // Replace with your actual GitHub Pages URL
+
 // Enable persistence
 db.enablePersistence()
     .catch((err) => {
@@ -27,7 +30,8 @@ db.enablePersistence()
         }
     });
 
-// Make Firebase services globally available
+// Make Firebase services and APP_URL globally available
 window.auth = auth;
 window.db = db;
 window.storage = storage;
+window.APP_URL = APP_URL;

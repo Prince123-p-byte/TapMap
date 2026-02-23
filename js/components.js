@@ -603,10 +603,23 @@ const Toast = {
         }
     }
 };
-
-// Business Card Component
+// Business Card Component - Fixed to handle objects properly
 const BusinessCard = ({ business, onClick }) => {
     if (!business) return null;
+
+    // Safely get location string
+    const locationString = React.useMemo(() => {
+        if (!business.location) return 'Location TBD';
+        if (typeof business.location === 'string') return business.location;
+        if (typeof business.location === 'object') {
+            // If it's an object with lat/lng, format it
+            if (business.location.lat && business.location.lng) {
+                return `${business.location.lat.toFixed(4)}, ${business.location.lng.toFixed(4)}`;
+            }
+            return JSON.stringify(business.location);
+        }
+        return 'Location TBD';
+    }, [business.location]);
 
     return React.createElement(
         'div',
@@ -618,14 +631,20 @@ const BusinessCard = ({ business, onClick }) => {
             'div',
             { className: "relative h-48 overflow-hidden" },
             React.createElement('img', { 
-                src: business.image || business.coverImage || 'https://via.placeholder.com/400x300', 
+                src: business.image || business.coverImage || 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=800', 
                 alt: business.name, 
-                className: "w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" 
+                className: "w-full h-full object-cover group-hover:scale-110 transition-transform duration-500",
+                onError: (e) => { e.target.src = 'https://via.placeholder.com/800x600?text=No+Image'; }
             }),
             React.createElement(
                 'div',
                 { className: "absolute top-4 left-4 bg-white/90 backdrop-blur px-2 py-1 rounded-lg text-xs font-bold uppercase tracking-wider text-gray-800" },
                 business.category || 'Business'
+            ),
+            business.userName && React.createElement(
+                'div',
+                { className: "absolute top-4 right-4 bg-purple-600/90 backdrop-blur text-white px-2 py-1 rounded-lg text-xs font-bold" },
+                business.userName
             )
         ),
         React.createElement(
@@ -652,7 +671,7 @@ const BusinessCard = ({ business, onClick }) => {
                 { className: "flex items-center gap-1 text-gray-500 text-sm mb-4" },
                 React.createElement(Icon, { name: "map-marker-alt", size: 14 }),
                 " ",
-                business.location || 'Location TBD'
+                locationString
             ),
             React.createElement(
                 'div',
@@ -672,7 +691,8 @@ const BusinessCard = ({ business, onClick }) => {
     );
 };
 
-// Make all components globally available
+// Make it globally available
+window.BusinessCard = BusinessCard;
 window.Icon = Icon;
 window.ModernCard = ModernCard;
 window.Button = Button;

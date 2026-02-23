@@ -1,14 +1,24 @@
-// Profile Page Component with Smart Directions
+// Profile Page Component with GitHub Sharing Links
 const ProfilePage = ({ business, onBack }) => {
     const [activeTab, setActiveTab] = React.useState('about');
     const [contactMessage, setContactMessage] = React.useState('');
     const [distance, setDistance] = React.useState(null);
     const [userLocation, setUserLocation] = React.useState(null);
+    const [isOwner, setIsOwner] = React.useState(false);
 
     React.useEffect(() => {
+        // Check if current user owns this business
+        const user = auth.currentUser;
+        if (user && business.userId === user.uid) {
+            setIsOwner(true);
+        }
+
         // Record view
         if (business?.id) {
-            DataManager.recordView(business.id);
+            // Increment view count
+            db.collection('businesses').doc(business.id).update({
+                views: firebase.firestore.FieldValue.increment(1)
+            }).catch(console.error);
         }
 
         // Get user location for distance calculation
@@ -40,6 +50,11 @@ const ProfilePage = ({ business, onBack }) => {
             );
         }
     }, [business?.id, business?.address]);
+
+    // Get shareable URL
+    const getBusinessUrl = () => {
+        return `${window.APP_URL || 'https://princecodes247.github.io/tapmap'}?business=${business.id}`;
+    };
 
     // Smart Directions - Opens appropriate maps app based on device
     const openDirections = (mode = 'drive') => {
@@ -106,12 +121,17 @@ const ProfilePage = ({ business, onBack }) => {
         }
         
         // Track the direction request
-        DataManager.recordClick(business.id);
+        db.collection('businesses').doc(business.id).update({
+            clicks: firebase.firestore.FieldValue.increment(1)
+        }).catch(console.error);
+        
         Toast.show('Opening directions...', 'info');
     };
 
     const handleContact = (type) => {
-        DataManager.recordConversation(business.id);
+        db.collection('businesses').doc(business.id).update({
+            conversations: firebase.firestore.FieldValue.increment(1)
+        }).catch(console.error);
         
         switch(type) {
             case 'phone':
@@ -127,14 +147,18 @@ const ProfilePage = ({ business, onBack }) => {
     };
 
     const handleQRScan = () => {
-        DataManager.incrementQRScan(business.id);
+        db.collection('businesses').doc(business.id).update({
+            qrScans: firebase.firestore.FieldValue.increment(1)
+        }).catch(console.error);
+        Toast.show('QR scan recorded!', 'success');
     };
 
     const handleShare = async () => {
+        const businessUrl = getBusinessUrl();
         const shareData = {
             title: business.name,
-            text: `Check out ${business.name} at ${business.address}`,
-            url: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}`
+            text: `Check out ${business.name} on tapMap!`,
+            url: businessUrl
         };
         
         if (navigator.share) {
@@ -142,12 +166,13 @@ const ProfilePage = ({ business, onBack }) => {
                 await navigator.share(shareData);
             } catch (error) {
                 if (error.name !== 'AbortError') {
-                    Toast.show('Share cancelled', 'info');
+                    navigator.clipboard.writeText(businessUrl);
+                    Toast.show('Link copied to clipboard!', 'success');
                 }
             }
         } else {
-            navigator.clipboard.writeText(shareData.url);
-            Toast.show('Location link copied to clipboard!', 'success');
+            navigator.clipboard.writeText(businessUrl);
+            Toast.show('Link copied to clipboard!', 'success');
         }
     };
 
@@ -161,7 +186,7 @@ const ProfilePage = ({ business, onBack }) => {
     // Check if business is open now (simplified)
     const isOpenNow = () => {
         if (!business.hours) return false;
-        // This is a simplified check - in production, you'd parse hours properly
+        // In production, parse hours properly
         return true;
     };
 
@@ -196,6 +221,14 @@ const ProfilePage = ({ business, onBack }) => {
                 },
                 React.createElement(Icon, { name: "arrow-left", size: 18 }),
                 "Back to Directory"
+            ),
+            
+            // Owner Badge
+            isOwner && React.createElement(
+                'div',
+                { className: "absolute top-6 right-6 bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg" },
+                React.createElement(Icon, { name: "crown", size: 18 }),
+                "You own this business"
             )
         ),
 
@@ -224,7 +257,7 @@ const ProfilePage = ({ business, onBack }) => {
                             null,
                             React.createElement(
                                 'div',
-                                { className: "flex items-center gap-3 mb-2" },
+                                { className: "flex items-center gap-3 mb-2 flex-wrap" },
                                 React.createElement(
                                     'h1',
                                     { className: "text-3xl md:text-4xl font-bold text-gray-900" },
@@ -234,11 +267,16 @@ const ProfilePage = ({ business, onBack }) => {
                                     'span',
                                     { className: "px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold" },
                                     "Verified"
+                                ),
+                                business.userName && React.createElement(
+                                    'span',
+                                    { className: "px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-bold" },
+                                    `by ${business.userName}`
                                 )
                             ),
                             React.createElement(
                                 'p',
-                                { className: "text-gray-500 flex items-center gap-2 mb-3" },
+                                { className: "text-gray-500 flex items-center gap-2 mb-3 flex-wrap" },
                                 React.createElement(Icon, { name: "building", size: 16 }),
                                 business.category,
                                 React.createElement('span', { className: "w-1 h-1 bg-gray-300 rounded-full" }),
@@ -247,7 +285,7 @@ const ProfilePage = ({ business, onBack }) => {
                             ),
                             React.createElement(
                                 'div',
-                                { className: "flex items-center gap-4" },
+                                { className: "flex items-center gap-4 flex-wrap" },
                                 React.createElement(
                                     'div',
                                     { className: "flex items-center gap-1" },
@@ -465,8 +503,7 @@ const ProfilePage = ({ business, onBack }) => {
                         ),
                         React.createElement(
                             'div',
-                            { className: "flex-1" },
-                            // Rating bars would go here
+                            { className: "flex-1" }
                         )
                     ),
                     // Review Form
@@ -569,7 +606,7 @@ const ProfilePage = ({ business, onBack }) => {
                 )
             ),
 
-            // QR Code Sidebar
+            // QR Code Sidebar with GitHub link
             React.createElement(
                 ModernCard,
                 { className: "p-6" },
@@ -580,16 +617,16 @@ const ProfilePage = ({ business, onBack }) => {
                         'div',
                         { className: "inline-block p-4 bg-white rounded-2xl shadow-lg mb-4" },
                         React.createElement('img', {
-                            src: business.qrCode || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://tapmap.com/business/${business.id}`,
+                            src: `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(getBusinessUrl())}`,
                             alt: "QR Code",
                             className: "w-40 h-40"
                         })
                     ),
-                    React.createElement('h3', { className: "font-bold text-lg mb-2" }, "Scan to Connect"),
+                    React.createElement('h3', { className: "font-bold text-lg mb-2" }, "Scan to View"),
                     React.createElement(
                         'p',
                         { className: "text-gray-500 text-sm mb-4" },
-                        "Scan this QR code to save business info to your phone"
+                        "Scan this QR code to view this business on tapMap"
                     ),
                     React.createElement(
                         'div',
@@ -597,24 +634,36 @@ const ProfilePage = ({ business, onBack }) => {
                         React.createElement(
                             'a',
                             {
-                                href: business.qrCode || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://tapmap.com/business/${business.id}`,
+                                href: `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(getBusinessUrl())}`,
                                 download: `${business.name}-qrcode.png`,
                                 onClick: handleQRScan,
                                 className: "flex-1 bg-indigo-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
                             },
                             React.createElement(Icon, { name: "download", size: 16 }),
-                            "Download"
+                            "Download QR"
                         ),
                         React.createElement(
-                            'button',
+                            'a',
                             {
-                                onClick: () => {
-                                    navigator.clipboard?.writeText(`https://tapmap.com/business/${business.id}`);
-                                    Toast.show('Link copied to clipboard');
-                                },
+                                href: getBusinessUrl(),
+                                target: "_blank",
                                 className: "p-2 border border-gray-200 rounded-xl text-gray-500 hover:bg-gray-50 transition-all"
                             },
-                            React.createElement(Icon, { name: "link", size: 16 })
+                            React.createElement(Icon, { name: "external-link", size: 16 })
+                        )
+                    ),
+                    React.createElement(
+                        'p',
+                        { className: "text-xs text-gray-400 mt-4" },
+                        "Share: ",
+                        React.createElement(
+                            'a',
+                            { 
+                                href: getBusinessUrl(),
+                                target: "_blank",
+                                className: "text-indigo-600 hover:underline"
+                            },
+                            getBusinessUrl().substring(0, 40) + '...'
                         )
                     )
                 )

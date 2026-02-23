@@ -1,4 +1,4 @@
-// Directory Page Component
+// Directory Page Component - Shows ALL businesses
 const DirectoryPage = ({ businesses, onSelectBusiness }) => {
     const [searchTerm, setSearchTerm] = React.useState('');
     const [locationFilter, setLocationFilter] = React.useState('all');
@@ -6,14 +6,15 @@ const DirectoryPage = ({ businesses, onSelectBusiness }) => {
     const [sortBy, setSortBy] = React.useState('recommended');
     const [viewMode, setViewMode] = React.useState('grid');
 
-    const locations = ['all', ...new Set(businesses.map(b => b.location))];
-    const categories = ['all', ...new Set(businesses.map(b => b.category))];
+    // Get unique locations and categories from all businesses
+    const locations = ['all', ...new Set(businesses.map(b => b.location).filter(Boolean))];
+    const categories = ['all', ...new Set(businesses.map(b => b.category).filter(Boolean))];
 
     const filteredBusinesses = businesses
         .filter(biz => {
-            const matchesSearch = biz.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                 biz.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                 biz.description?.toLowerCase().includes(searchTerm.toLowerCase());
+            const matchesSearch = (biz.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+                                 (biz.category?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+                                 (biz.description?.toLowerCase() || '').includes(searchTerm.toLowerCase());
             const matchesLocation = locationFilter === 'all' || biz.location === locationFilter;
             const matchesCategory = categoryFilter === 'all' || biz.category === categoryFilter;
             return matchesSearch && matchesLocation && matchesCategory;
@@ -25,9 +26,9 @@ const DirectoryPage = ({ businesses, onSelectBusiness }) => {
                 case 'views':
                     return (b.views || 0) - (a.views || 0);
                 case 'newest':
-                    return new Date(b.createdAt) - new Date(a.createdAt);
+                    return new Date(b.createdAt?.toDate?.() || 0) - new Date(a.createdAt?.toDate?.() || 0);
                 default:
-                    return (b.featured ? 1 : 0) - (a.featured ? 1 : 0);
+                    return 0;
             }
         });
 
@@ -44,12 +45,12 @@ const DirectoryPage = ({ businesses, onSelectBusiness }) => {
                 React.createElement(
                     'h1',
                     { className: "text-4xl font-extrabold gradient-text mb-4" },
-                    "Discover Local Excellence"
+                    "Discover Local Businesses"
                 ),
                 React.createElement(
                     'p',
                     { className: "text-gray-500 text-lg max-w-2xl mx-auto" },
-                    "Browse through hundreds of verified business portfolios and professional services."
+                    `Browse through ${businesses.length} verified business portfolios and professional services.`
                 )
             ),
 
@@ -181,9 +182,9 @@ const DirectoryPage = ({ businesses, onSelectBusiness }) => {
                                     { className: "flex items-center gap-6" },
                                     React.createElement(
                                         'div',
-                                        { className: "w-24 h-24 rounded-xl overflow-hidden" },
+                                        { className: "w-24 h-24 rounded-xl overflow-hidden flex-shrink-0" },
                                         React.createElement('img', {
-                                            src: biz.image || biz.coverImage,
+                                            src: biz.image || biz.coverImage || 'https://via.placeholder.com/400x300',
                                             alt: biz.name,
                                             className: "w-full h-full object-cover"
                                         })
@@ -193,7 +194,7 @@ const DirectoryPage = ({ businesses, onSelectBusiness }) => {
                                         { className: "flex-1" },
                                         React.createElement(
                                             'div',
-                                            { className: "flex items-center gap-3 mb-2" },
+                                            { className: "flex items-center gap-3 mb-2 flex-wrap" },
                                             React.createElement(
                                                 'h3',
                                                 { className: "text-xl font-bold text-gray-900" },
@@ -203,26 +204,37 @@ const DirectoryPage = ({ businesses, onSelectBusiness }) => {
                                                 'span',
                                                 { className: "px-2 py-1 bg-gray-100 rounded-lg text-xs font-bold text-gray-600" },
                                                 biz.category
+                                            ),
+                                            biz.userName && React.createElement(
+                                                'span',
+                                                { className: "px-2 py-1 bg-purple-100 text-purple-600 rounded-lg text-xs font-bold" },
+                                                biz.userName
                                             )
                                         ),
                                         React.createElement(
                                             'div',
-                                            { className: "flex items-center gap-4 text-sm text-gray-500 mb-2" },
+                                            { className: "flex items-center gap-4 text-sm text-gray-500 mb-2 flex-wrap" },
                                             React.createElement(
                                                 'span',
                                                 { className: "flex items-center gap-1" },
                                                 React.createElement(Icon, { name: "map-marker-alt", size: 12 }),
-                                                biz.location
+                                                biz.location || 'Location TBD'
                                             ),
-                                            React.createElement(
+                                            biz.rating && React.createElement(
                                                 'span',
                                                 { className: "flex items-center gap-1" },
                                                 React.createElement(Icon, { name: "star", size: 12, className: "text-amber-400" }),
                                                 biz.rating,
-                                                React.createElement('span', { className: "text-gray-400" }, `(${biz.reviews})`)
+                                                React.createElement('span', { className: "text-gray-400" }, `(${biz.reviews || 0})`)
+                                            ),
+                                            React.createElement(
+                                                'span',
+                                                { className: "flex items-center gap-1" },
+                                                React.createElement(Icon, { name: "eye", size: 12 }),
+                                                biz.views?.toLocaleString() || 0
                                             )
                                         ),
-                                        React.createElement(
+                                        biz.description && React.createElement(
                                             'p',
                                             { className: "text-gray-600 text-sm line-clamp-2" },
                                             biz.description
@@ -231,7 +243,7 @@ const DirectoryPage = ({ businesses, onSelectBusiness }) => {
                                     React.createElement(
                                         'div',
                                         { className: "text-right" },
-                                        React.createElement(
+                                        biz.rating && React.createElement(
                                             'div',
                                             { className: "text-2xl font-bold text-indigo-600 mb-2" },
                                             biz.rating
@@ -245,14 +257,9 @@ const DirectoryPage = ({ businesses, onSelectBusiness }) => {
                                 )
                             )
                         )
-                    ),
-
-            // Pagination
-            filteredBusinesses.length > 12 && React.createElement(Pagination, {
-                currentPage: 1,
-                totalPages: Math.ceil(filteredBusinesses.length / 12),
-                onPageChange: () => {}
-            })
+                    )
         )
     );
 };
+
+window.DirectoryPage = DirectoryPage;
