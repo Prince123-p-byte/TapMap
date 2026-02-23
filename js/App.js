@@ -1,10 +1,6 @@
 (function() {
     const App = () => {
-        // Check for business ID in URL IMMEDIATELY - before any state is set
-        const urlParams = new URLSearchParams(window.location.search);
-        const initialBusinessId = urlParams.get('business');
-        
-        const [activePage, setActivePage] = React.useState(initialBusinessId ? 'profile' : 'home');
+        const [activePage, setActivePage] = React.useState('home');
         const [businesses, setBusinesses] = React.useState([]);
         const [allBusinesses, setAllBusinesses] = React.useState([]);
         const [selectedBusiness, setSelectedBusiness] = React.useState(null);
@@ -16,7 +12,7 @@
         const [unreadCount, setUnreadCount] = React.useState(0);
         const [showNotifications, setShowNotifications] = React.useState(false);
         const [showUserMenu, setShowUserMenu] = React.useState(false);
-        const [initialBusinessLoaded, setInitialBusinessLoaded] = React.useState(false);
+        const [previousUnreadCount, setPreviousUnreadCount] = React.useState(0);
 
         // Base URL for sharing
         const BASE_URL = 'https://prince123-p-byte.github.io/TapMap';
@@ -42,12 +38,15 @@
             };
         }, []);
 
-        // Load the specific business from URL if present
+        // Check for business ID in URL when app loads
         React.useEffect(() => {
-            const loadBusinessFromUrl = async () => {
-                if (initialBusinessId && !initialBusinessLoaded) {
+            const checkUrlForBusiness = async () => {
+                const urlParams = new URLSearchParams(window.location.search);
+                const businessId = urlParams.get('business');
+                
+                if (businessId) {
                     try {
-                        const doc = await db.collection('businesses').doc(initialBusinessId).get();
+                        const doc = await db.collection('businesses').doc(businessId).get();
                         if (doc.exists) {
                             const business = {
                                 id: doc.id,
@@ -56,24 +55,20 @@
                             setSelectedBusiness(business);
                             setActivePage('profile');
                             
-                            // Clean the URL (remove the parameter)
                             const newUrl = window.location.pathname;
                             window.history.replaceState({}, '', newUrl);
                         } else {
                             Toast.show('Business not found', 'error');
-                            setActivePage('home');
                         }
                     } catch (error) {
                         console.error('Error loading business from URL:', error);
                         Toast.show('Error loading business', 'error');
-                        setActivePage('home');
                     }
-                    setInitialBusinessLoaded(true);
                 }
             };
             
-            loadBusinessFromUrl();
-        }, [initialBusinessId, initialBusinessLoaded]);
+            checkUrlForBusiness();
+        }, []);
 
         // Load all businesses on startup (public)
         React.useEffect(() => {
@@ -99,6 +94,22 @@
 
             return () => unsubscribe();
         }, []);
+
+        // Play notification sound when new notification arrives
+        React.useEffect(() => {
+            if (unreadCount > previousUnreadCount) {
+                // Play notification sound
+                const audio = new Audio('https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3');
+                audio.play().catch(e => console.log('Audio play failed:', e));
+                
+                // Show toast for new notification
+                const latestNotification = notifications[0];
+                if (latestNotification) {
+                    Toast.show(latestNotification.message, 'info', 4000);
+                }
+            }
+            setPreviousUnreadCount(unreadCount);
+        }, [unreadCount, notifications]);
 
         const loadAllBusinesses = async () => {
             try {
@@ -168,12 +179,13 @@
             }
         };
 
+        // Enhanced notifications listener with real-time updates
         const setupNotificationsListener = (userId) => {
             try {
                 const unsubscribe = db.collection('notifications')
                     .where('userId', '==', userId)
                     .orderBy('createdAt', 'desc')
-                    .limit(20)
+                    .limit(50)
                     .onSnapshot((snapshot) => {
                         const notifs = snapshot.docs.map(doc => ({
                             id: doc.id,
@@ -189,6 +201,19 @@
             } catch (error) {
                 console.error('Error setting up notifications:', error);
                 return () => {};
+            }
+        };
+
+        // Create notification helper
+        const createNotification = async (notification) => {
+            try {
+                await db.collection('notifications').add({
+                    ...notification,
+                    read: false,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            } catch (error) {
+                console.error('Error creating notification:', error);
             }
         };
 
@@ -235,8 +260,9 @@
                     userId: user.uid,
                     type: 'business',
                     title: 'Business Created',
-                    message: `Successfully created ${businessData.name}`,
-                    link: `/business/${docRef.id}`
+                    message: `🎉 You successfully created "${businessData.name}"`,
+                    link: `/business/${docRef.id}`,
+                    icon: 'building'
                 });
                 
                 Toast.show('Business created successfully!', 'success');
@@ -245,18 +271,6 @@
             } catch (error) {
                 console.error('Error adding business:', error);
                 Toast.show(error.message, 'error');
-            }
-        };
-
-        const createNotification = async (notification) => {
-            try {
-                await db.collection('notifications').add({
-                    ...notification,
-                    read: false,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
-            } catch (error) {
-                console.error('Error creating notification:', error);
             }
         };
 
@@ -276,6 +290,15 @@
                 setBusinesses(prev => prev.map(b => b.id === id ? { ...b, ...data } : b));
                 setAllBusinesses(prev => prev.map(b => b.id === id ? { ...b, ...data } : b));
 
+                await createNotification({
+                    userId: user.uid,
+                    type: 'business',
+                    title: 'Business Updated',
+                    message: `✏️ You updated "${businessData.name}"`,
+                    link: `/business/${id}`,
+                    icon: 'edit'
+                });
+
                 Toast.show('Business updated successfully!', 'success');
             } catch (error) {
                 console.error('Error updating business:', error);
@@ -290,10 +313,19 @@
             }
             
             try {
+                const business = businesses.find(b => b.id === id);
                 await db.collection('businesses').doc(id).delete();
                 
                 setBusinesses(prev => prev.filter(b => b.id !== id));
                 setAllBusinesses(prev => prev.filter(b => b.id !== id));
+                
+                await createNotification({
+                    userId: user.uid,
+                    type: 'business',
+                    title: 'Business Deleted',
+                    message: `🗑️ You deleted "${business?.name}"`,
+                    icon: 'trash'
+                });
                 
                 Toast.show('Business deleted', 'warning');
             } catch (error) {
@@ -365,6 +397,14 @@
                     });
                 }
                 
+                await createNotification({
+                    userId: user.uid,
+                    type: 'profile',
+                    title: 'Profile Updated',
+                    message: `👤 Your profile was updated successfully`,
+                    icon: 'user'
+                });
+                
                 Toast.show('Profile updated successfully', 'success');
             } catch (error) {
                 console.error('Error updating profile:', error);
@@ -372,7 +412,7 @@
             }
         };
 
-        if (loading && !initialBusinessLoaded) {
+        if (loading) {
             return React.createElement(LoadingSpinner, { fullPage: true });
         }
 
@@ -394,7 +434,8 @@
                         onBack: () => setActivePage('directory'),
                         currentUser: user,
                         userData,
-                        baseUrl: BASE_URL
+                        baseUrl: BASE_URL,
+                        onCreateNotification: createNotification
                     });
                 case 'dashboard':
                     return React.createElement(ProtectedRoute, { user },

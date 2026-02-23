@@ -9,6 +9,7 @@
         const [userReview, setUserReview] = React.useState(null);
         const [loadingReviews, setLoadingReviews] = React.useState(false);
         const [submittingReview, setSubmittingReview] = React.useState(false);
+        const [hasNotifiedView, setHasNotifiedView] = React.useState(false);
 
         // Format location safely
         const formatLocation = (location) => {
@@ -35,7 +36,6 @@
         const loadReviews = async () => {
             setLoadingReviews(true);
             try {
-                // First try with orderBy
                 let snapshot;
                 try {
                     snapshot = await db.collection('reviews')
@@ -43,7 +43,6 @@
                         .orderBy('createdAt', 'desc')
                         .get();
                 } catch (indexError) {
-                    // If index error, try without orderBy
                     console.log('Index not ready, loading without order');
                     snapshot = await db.collection('reviews')
                         .where('businessId', '==', business.id)
@@ -55,7 +54,6 @@
                     ...doc.data()
                 }));
 
-                // Sort manually if no index
                 reviewsData.sort((a, b) => {
                     const dateA = a.createdAt?.toDate?.() || new Date(0);
                     const dateB = b.createdAt?.toDate?.() || new Date(0);
@@ -64,7 +62,6 @@
 
                 setReviews(reviewsData);
 
-                // Check if current user has already reviewed
                 if (currentUser) {
                     const userReview = reviewsData.find(r => r.userId === currentUser.uid);
                     if (userReview) {
@@ -73,7 +70,6 @@
                     }
                 }
 
-                // Update business rating
                 if (reviewsData.length > 0) {
                     const avgRating = reviewsData.reduce((sum, r) => sum + r.rating, 0) / reviewsData.length;
                     await db.collection('businesses').doc(business.id).update({
@@ -86,6 +82,20 @@
                 Toast.show('Error loading reviews', 'error');
             } finally {
                 setLoadingReviews(false);
+            }
+        };
+
+        // Create notification helper - stores in Firebase even if user is logged out
+        const createNotification = async (notification) => {
+            try {
+                await db.collection('notifications').add({
+                    ...notification,
+                    read: false,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                console.log('Notification created:', notification);
+            } catch (error) {
+                console.error('Error creating notification:', error);
             }
         };
 
@@ -115,16 +125,27 @@
                 };
 
                 if (userReview) {
-                    // Update existing review
                     await db.collection('reviews').doc(userReview.id).update(reviewData);
                     Toast.show('Review updated successfully', 'success');
                 } else {
-                    // Create new review
                     await db.collection('reviews').add(reviewData);
                     Toast.show('Review posted successfully', 'success');
+                    
+                    // Notify business owner about new review (if not self-review)
+                    if (business.userId !== currentUser.uid) {
+                        await createNotification({
+                            userId: business.userId,
+                            type: 'review',
+                            title: 'New Review',
+                            message: `⭐ ${userData?.name || currentUser.displayName || 'Someone'} reviewed your business "${business.name}"`,
+                            link: `/business/${business.id}`,
+                            icon: 'star',
+                            businessId: business.id,
+                            reviewerName: userData?.name || currentUser.displayName || 'Someone'
+                        });
+                    }
                 }
 
-                // Reload reviews
                 await loadReviews();
                 setNewReview({ rating: 5, comment: '' });
             } catch (error) {
@@ -153,17 +174,32 @@
             }
         };
 
-        // Check if current user owns this business
+        // Check if current user owns this business and record view
         React.useEffect(() => {
             if (currentUser && business && business.userId === currentUser.uid) {
                 setIsOwner(true);
             }
 
-            // Record view
-            if (business?.id) {
+            // Record view and notify owner (only once per session)
+            if (business?.id && !hasNotifiedView) {
+                // Always increment view count
                 db.collection('businesses').doc(business.id).update({
                     views: firebase.firestore.FieldValue.increment(1)
                 }).catch(console.error);
+
+                // Notify business owner about new view (if viewer is not the owner)
+                if (business.userId && (!currentUser || currentUser.uid !== business.userId)) {
+                    createNotification({
+                        userId: business.userId,
+                        type: 'view',
+                        title: 'New View',
+                        message: `👀 Someone viewed your business "${business.name}"`,
+                        link: `/business/${business.id}`,
+                        icon: 'eye',
+                        businessId: business.id
+                    }).catch(console.error);
+                }
+                setHasNotifiedView(true);
             }
 
             // Get user location for distance calculation
@@ -171,8 +207,16 @@
                 navigator.geolocation.getCurrentPosition(
                     async (position) => {
                         try {
-                            const coords = await GeolocationUtils.getCoordsFromAddress(business.address);
-                            if (coords) {
+                            const proxy = 'https://cors-anywhere.herokuapp.com/';
+                            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(business.address)}`;
+                            const response = await fetch(proxy + url);
+                            const data = await response.json();
+                            
+                            if (data && data.length > 0) {
+                                const coords = {
+                                    lat: parseFloat(data[0].lat),
+                                    lon: parseFloat(data[0].lon)
+                                };
                                 const dist = GeolocationUtils.calculateDistance(
                                     position.coords.latitude,
                                     position.coords.longitude,
@@ -190,15 +234,15 @@
                     }
                 );
             }
-        }, [business?.id, business?.address, currentUser]);
+        }, [business?.id, business?.address, currentUser, hasNotifiedView]);
 
         // Get shareable URL
         const getBusinessUrl = () => {
             return `${baseUrl || 'https://prince123-p-byte.github.io/TapMap'}/?business=${business?.id}`;
         };
 
-        // Smart Directions
-        const openDirections = (mode = 'drive') => {
+        // Smart Directions with notification
+        const openDirections = async (mode = 'drive') => {
             if (!business?.address) {
                 Toast.show('Address not available', 'error');
                 return;
@@ -247,19 +291,46 @@
                 window.open(mapsUrl, '_blank');
             }
             
-            db.collection('businesses').doc(business.id).update({
+            // Update click count
+            await db.collection('businesses').doc(business.id).update({
                 clicks: firebase.firestore.FieldValue.increment(1)
             }).catch(console.error);
+            
+            // Notify business owner about directions request (if viewer is not the owner)
+            if (business.userId && (!currentUser || currentUser.uid !== business.userId)) {
+                await createNotification({
+                    userId: business.userId,
+                    type: 'click',
+                    title: 'Directions Requested',
+                    message: `📍 Someone requested directions to "${business.name}"`,
+                    link: `/business/${business.id}`,
+                    icon: 'location-arrow',
+                    businessId: business.id
+                });
+            }
             
             Toast.show('Opening directions...', 'info');
         };
 
-        const handleContact = (type) => {
+        const handleContact = async (type) => {
             if (!business) return;
             
-            db.collection('businesses').doc(business.id).update({
+            await db.collection('businesses').doc(business.id).update({
                 conversations: firebase.firestore.FieldValue.increment(1)
             }).catch(console.error);
+            
+            // Notify business owner about contact (if viewer is not the owner)
+            if (business.userId && (!currentUser || currentUser.uid !== business.userId)) {
+                await createNotification({
+                    userId: business.userId,
+                    type: 'contact',
+                    title: 'Contact Made',
+                    message: `📞 Someone tried to contact "${business.name}" via ${type}`,
+                    link: `/business/${business.id}`,
+                    icon: type === 'phone' ? 'phone' : type === 'whatsapp' ? 'whatsapp' : 'envelope',
+                    businessId: business.id
+                });
+            }
             
             switch(type) {
                 case 'phone':
@@ -274,12 +345,26 @@
             }
         };
 
-        const handleQRScan = () => {
+        const handleQRScan = async () => {
             if (!business) return;
             
-            db.collection('businesses').doc(business.id).update({
+            await db.collection('businesses').doc(business.id).update({
                 qrScans: firebase.firestore.FieldValue.increment(1)
             }).catch(console.error);
+            
+            // Notify business owner about QR scan (if viewer is not the owner)
+            if (business.userId && (!currentUser || currentUser.uid !== business.userId)) {
+                await createNotification({
+                    userId: business.userId,
+                    type: 'qr',
+                    title: 'QR Code Scanned',
+                    message: `📱 Someone scanned your QR code for "${business.name}"`,
+                    link: `/business/${business.id}`,
+                    icon: 'qrcode',
+                    businessId: business.id
+                });
+            }
+            
             Toast.show('QR scan recorded!', 'success');
         };
 
