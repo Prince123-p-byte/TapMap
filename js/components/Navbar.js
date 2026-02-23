@@ -19,13 +19,12 @@
     }) => {
         const [isOpen, setIsOpen] = React.useState(false);
 
+        // Simplified navigation links - REMOVED Media and QR Codes
         const navLinks = [
             { id: 'home', label: 'Home', icon: 'home' },
             { id: 'directory', label: 'Explore', icon: 'compass' },
             { id: 'dashboard', label: 'Dashboard', icon: 'chart-pie' },
             { id: 'sub-businesses', label: 'My Businesses', icon: 'building' },
-            { id: 'media', label: 'Media', icon: 'image' },
-            { id: 'qr-manager', label: 'QR Codes', icon: 'qrcode' },
             { id: 'analytics', label: 'Analytics', icon: 'chart-line' },
             { id: 'help', label: 'Help', icon: 'question-circle' }
         ];
@@ -70,7 +69,7 @@
                         )
                     ),
 
-                    // Desktop Navigation
+                    // Desktop Navigation - Updated with simplified links
                     React.createElement(
                         'div',
                         { className: "hidden md:flex items-center space-x-1" },
@@ -291,7 +290,7 @@
                 )
             ),
 
-            // Mobile Navigation Menu
+            // Mobile Navigation Menu - Updated with simplified links
             isOpen && React.createElement(
                 'div',
                 { className: "md:hidden bg-white border-b border-gray-100 py-4 px-4 space-y-2 animate-slide-down" },
