@@ -1,3 +1,4 @@
+// js/app.js
 (function() {
     const App = () => {
         const [activePage, setActivePage] = React.useState('home');
@@ -13,11 +14,23 @@
         const [showNotifications, setShowNotifications] = React.useState(false);
         const [showUserMenu, setShowUserMenu] = React.useState(false);
         const [previousUnreadCount, setPreviousUnreadCount] = React.useState(0);
+        const [supabaseReady, setSupabaseReady] = React.useState(!!window.supabase);
 
-        // Base URL for sharing
         const BASE_URL = 'https://prince123-p-byte.github.io/TapMap';
 
-        // Listen for auth modal event
+        // Check if Supabase is available
+        React.useEffect(() => {
+            if (!window.supabase) {
+                console.error('❌ Supabase not initialized! Check your index.html script order.');
+                window.Toast?.show('Database connection error. Please refresh.', 'error');
+                setLoading(false);
+                return;
+            }
+            console.log('✅ Supabase ready in App');
+            setSupabaseReady(true);
+        }, []);
+
+        // Event listeners for navigation and auth
         React.useEffect(() => {
             const handleOpenAuth = () => setShowAuthModal(true);
             window.addEventListener('openAuthModal', handleOpenAuth);
@@ -38,51 +51,87 @@
             };
         }, []);
 
-        // Check for business ID in URL when app loads
+        // Check URL for business ID (QR code scan)
         React.useEffect(() => {
+            if (!supabaseReady) return;
+            
             const checkUrlForBusiness = async () => {
                 const urlParams = new URLSearchParams(window.location.search);
                 const businessId = urlParams.get('business');
                 
                 if (businessId) {
                     try {
-                        const doc = await db.collection('businesses').doc(businessId).get();
-                        if (doc.exists) {
-                            const business = {
-                                id: doc.id,
-                                ...doc.data()
-                            };
-                            setSelectedBusiness(business);
+                        const { data, error } = await window.supabase
+                            .from('businesses')
+                            .select('*')
+                            .eq('id', businessId)
+                            .single();
+                        
+                        if (error) throw error;
+                        
+                        if (data) {
+                            setSelectedBusiness(data);
                             setActivePage('profile');
                             
                             const newUrl = window.location.pathname;
                             window.history.replaceState({}, '', newUrl);
-                        } else {
-                            Toast.show('Business not found', 'error');
+                            
+                            try {
+                                await window.supabase
+                                    .rpc('increment_analytics', {
+                                        p_business_id: businessId,
+                                        p_field: 'scans'
+                                    });
+                            } catch (rpcError) {
+                                console.log('Analytics RPC not available yet');
+                            }
+                            
+                            if (data.user_id) {
+                                try {
+                                    await window.supabase.from('notifications').insert([{
+                                        user_id: data.user_id,
+                                        type: 'scan',
+                                        title: 'New QR Scan',
+                                        message: `📱 Someone scanned your QR code for "${data.name}"`,
+                                        icon: 'qrcode',
+                                        business_id: businessId,
+                                        read: false,
+                                        created_at: new Date().toISOString()
+                                    }]);
+                                } catch (notifError) {
+                                    console.log('Notification insert failed');
+                                }
+                            }
+                            
+                            window.Toast?.show('Business loaded!', 'success');
                         }
                     } catch (error) {
                         console.error('Error loading business from URL:', error);
-                        Toast.show('Error loading business', 'error');
+                        window.Toast?.show('Business not found', 'error');
                     }
                 }
             };
             
             checkUrlForBusiness();
-        }, []);
+        }, [supabaseReady]);
 
-        // Load all businesses on startup (public)
+        // Load all businesses on startup
         React.useEffect(() => {
+            if (!supabaseReady) return;
             loadAllBusinesses();
-        }, []);
+        }, [supabaseReady]);
 
-        // Listen for auth state changes (for protected features)
+        // Auth state listener
         React.useEffect(() => {
-            const unsubscribe = auth.onAuthStateChanged(async (user) => {
-                setUser(user);
-                if (user) {
-                    await loadUserData(user.uid);
-                    await loadUserBusinesses(user.uid);
-                    setupNotificationsListener(user.uid);
+            if (!supabaseReady) return;
+            
+            window.supabase.auth.getSession().then(({ data: { session } }) => {
+                const currentUser = session?.user || null;
+                setUser(currentUser);
+                if (currentUser) {
+                    loadUserData(currentUser.id);
+                    loadUserBusinesses(currentUser.id);
+                    setupNotificationsListener(currentUser.id);
                 } else {
                     setUserData(null);
                     setBusinesses([]);
@@ -90,71 +139,115 @@
                     setUnreadCount(0);
                 }
                 setLoading(false);
+            }).catch(error => {
+                console.error('Auth session error:', error);
+                setLoading(false);
             });
 
-            return () => unsubscribe();
-        }, []);
+            const { data: { subscription } } = window.supabase.auth.onAuthStateChange((event, session) => {
+                const currentUser = session?.user || null;
+                setUser(currentUser);
+                
+                if (currentUser) {
+                    loadUserData(currentUser.id);
+                    loadUserBusinesses(currentUser.id);
+                    setupNotificationsListener(currentUser.id);
+                } else {
+                    setUserData(null);
+                    setBusinesses([]);
+                    setNotifications([]);
+                    setUnreadCount(0);
+                }
+            });
 
-        // Play notification sound when new notification arrives
+            return () => subscription?.unsubscribe();
+        }, [supabaseReady]);
+
+        // Notification sound
         React.useEffect(() => {
             if (unreadCount > previousUnreadCount) {
-                // Play notification sound
                 const audio = new Audio('https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3');
                 audio.play().catch(e => console.log('Audio play failed:', e));
                 
-                // Show toast for new notification
                 const latestNotification = notifications[0];
                 if (latestNotification) {
-                    Toast.show(latestNotification.message, 'info', 4000);
+                    window.Toast?.show(latestNotification.message, 'info', 4000);
                 }
             }
             setPreviousUnreadCount(unreadCount);
         }, [unreadCount, notifications]);
 
+        // Data loading functions
         const loadAllBusinesses = async () => {
             try {
-                const snapshot = await db.collection('businesses')
-                    .orderBy('createdAt', 'desc')
-                    .get();
+                const { data, error } = await window.supabase
+                    .from('businesses')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                
+                if (error) throw error;
 
-                const businessesData = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data(),
-                    name: doc.data().name || 'Unnamed Business',
-                    category: doc.data().category || 'General',
-                    location: doc.data().location || 'Location TBD',
-                    rating: doc.data().rating || 5.0,
-                    reviews: doc.data().reviews || 0
+                const businessesData = (data || []).map(biz => ({
+                    id: biz.id,
+                    ...biz,
+                    name: biz.name || 'Unnamed Business',
+                    category: biz.category || 'General',
+                    location: biz.location || 'Location TBD',
+                    rating: biz.rating || 5.0,
+                    reviews: biz.reviews || 0,
+                    views: biz.views || 0,
+                    clicks: biz.clicks || 0,
+                    qrScans: biz.qr_scans || 0,
+                    conversations: biz.conversations || 0,
+                    coverImage: biz.cover_image,
+                    priceRange: biz.price_range
                 }));
 
                 setAllBusinesses(businessesData);
             } catch (error) {
                 console.error('Error loading all businesses:', error);
+                setAllBusinesses([]);
             }
         };
 
         const loadUserData = async (userId) => {
             try {
-                const docRef = db.collection('users').doc(userId);
-                const doc = await docRef.get();
+                const { data, error } = await window.supabase
+                    .from('users')
+                    .select('*')
+                    .eq('id', userId)
+                    .single();
                 
-                if (doc.exists) {
-                    setUserData(doc.data());
+                if (error && error.code !== 'PGRST116') throw error;
+                
+                if (data) {
+                    setUserData(data);
                 } else {
                     const defaultData = {
-                        name: auth.currentUser?.displayName || '',
-                        email: auth.currentUser?.email || '',
-                        companyName: '',
+                        id: userId,
+                        name: user?.email?.split('@')[0] || '',
+                        email: user?.email || '',
+                        company_name: '',
                         phone: '',
                         role: 'user',
-                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        created_at: new Date().toISOString(),
                         settings: {
                             notifications: true,
                             theme: 'light'
                         }
                     };
-                    await docRef.set(defaultData);
-                    setUserData(defaultData);
+                    
+                    try {
+                        const { error: insertError } = await window.supabase
+                            .from('users')
+                            .insert([defaultData]);
+                        
+                        if (!insertError) {
+                            setUserData(defaultData);
+                        }
+                    } catch (insertError) {
+                        console.log('Could not create user profile');
+                    }
                 }
             } catch (error) {
                 console.error('Error loading user data:', error);
@@ -163,55 +256,94 @@
 
         const loadUserBusinesses = async (userId) => {
             try {
-                const snapshot = await db.collection('businesses')
-                    .where('userId', '==', userId)
-                    .orderBy('createdAt', 'desc')
-                    .get();
-
-                const businessesData = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
+                console.log('Loading businesses for user:', userId);
+                
+                const { data, error } = await window.supabase
+                    .from('businesses')
+                    .select('*')
+                    .eq('user_id', userId)
+                    .order('created_at', { ascending: false });
+                
+                if (error) {
+                    console.error('Error loading businesses:', error);
+                    throw error;
+                }
+                
+                console.log('Loaded businesses:', data);
+                
+                const businessesData = (data || []).map(biz => ({
+                    id: biz.id,
+                    ...biz,
+                    views: biz.views || 0,
+                    clicks: biz.clicks || 0,
+                    qrScans: biz.qr_scans || 0,
+                    conversations: biz.conversations || 0,
+                    coverImage: biz.cover_image,
+                    priceRange: biz.price_range
                 }));
 
                 setBusinesses(businessesData);
             } catch (error) {
                 console.error('Error loading user businesses:', error);
+                setBusinesses([]);
             }
         };
 
-        // Enhanced notifications listener with real-time updates
         const setupNotificationsListener = (userId) => {
             try {
-                const unsubscribe = db.collection('notifications')
-                    .where('userId', '==', userId)
-                    .orderBy('createdAt', 'desc')
+                const subscription = window.supabase
+                    .channel('notifications-channel')
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: '*',
+                            schema: 'public',
+                            table: 'notifications',
+                            filter: `user_id=eq.${userId}`
+                        },
+                        async () => {
+                            const { data } = await window.supabase
+                                .from('notifications')
+                                .select('*')
+                                .eq('user_id', userId)
+                                .order('created_at', { ascending: false })
+                                .limit(50);
+                            
+                            setNotifications(data || []);
+                            setUnreadCount((data || []).filter(n => !n.read).length);
+                        }
+                    )
+                    .subscribe();
+
+                window.supabase
+                    .from('notifications')
+                    .select('*')
+                    .eq('user_id', userId)
+                    .order('created_at', { ascending: false })
                     .limit(50)
-                    .onSnapshot((snapshot) => {
-                        const notifs = snapshot.docs.map(doc => ({
-                            id: doc.id,
-                            ...doc.data()
-                        }));
-                        setNotifications(notifs);
-                        setUnreadCount(notifs.filter(n => !n.read).length);
-                    }, (error) => {
-                        console.error('Error loading notifications:', error);
+                    .then(({ data }) => {
+                        setNotifications(data || []);
+                        setUnreadCount((data || []).filter(n => !n.read).length);
                     });
 
-                return unsubscribe;
+                return () => subscription?.unsubscribe();
             } catch (error) {
                 console.error('Error setting up notifications:', error);
                 return () => {};
             }
         };
 
-        // Create notification helper
         const createNotification = async (notification) => {
             try {
-                await db.collection('notifications').add({
-                    ...notification,
-                    read: false,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
+                const { error } = await window.supabase
+                    .from('notifications')
+                    .insert([{
+                        ...notification,
+                        read: false,
+                        created_at: new Date().toISOString()
+                    }]);
+                
+                if (error) throw error;
             } catch (error) {
                 console.error('Error creating notification:', error);
             }
@@ -224,53 +356,86 @@
             }
 
             try {
-                const processedImages = (businessData.images || []).map(img => {
-                    if (img.url) return img.url;
-                    if (typeof img === 'string') return img;
-                    return null;
-                }).filter(url => url !== null);
-
-                const businessWithUser = {
-                    ...businessData,
-                    images: processedImages,
-                    userId: user.uid,
-                    userEmail: user.email,
-                    userName: userData?.name || user.displayName || 'Anonymous',
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                console.log('Creating business with data:', businessData);
+                
+                const { data: { user: currentUser } } = await window.supabase.auth.getUser();
+                
+                const businessToInsert = {
+                    user_id: currentUser.id,
+                    name: businessData.name || '',
+                    category: businessData.category || '',
+                    location: businessData.location || '',
+                    address: businessData.address || '',
+                    phone: businessData.phone || '',
+                    email: businessData.email || '',
+                    whatsapp: businessData.whatsapp || '',
+                    description: businessData.description || '',
+                    hours: businessData.hours || '',
+                    price_range: businessData.priceRange || '$$',
+                    status: businessData.status || 'active',
+                    images: businessData.images || [],
+                    cover_image: businessData.coverImage || '',
+                    logo: businessData.logo || '',
+                    user_email: currentUser.email || '',
+                    user_name: userData?.name || currentUser.email?.split('@')[0] || 'Anonymous',
                     views: 0,
                     clicks: 0,
-                    qrScans: 0,
+                    qr_scans: 0,
                     conversations: 0,
                     rating: 5.0,
-                    reviews: 0
+                    reviews: 0,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
                 };
 
-                const docRef = await db.collection('businesses').add(businessWithUser);
+                console.log('Inserting business:', businessToInsert);
+
+                const { data, error } = await window.supabase
+                    .from('businesses')
+                    .insert([businessToInsert])
+                    .select()
+                    .single();
+                
+                if (error) {
+                    console.error('Supabase insert error:', error);
+                    throw new Error(error.message);
+                }
+                
+                console.log('Business created successfully:', data);
                 
                 const newBusiness = {
-                    id: docRef.id,
-                    ...businessWithUser
+                    id: data.id,
+                    ...data,
+                    qrScans: data.qr_scans || 0,
+                    coverImage: data.cover_image,
+                    priceRange: data.price_range
                 };
 
                 setBusinesses(prev => [newBusiness, ...prev]);
                 setAllBusinesses(prev => [newBusiness, ...prev]);
                 
-                await createNotification({
-                    userId: user.uid,
-                    type: 'business',
-                    title: 'Business Created',
-                    message: `🎉 You successfully created "${businessData.name}"`,
-                    link: `/business/${docRef.id}`,
-                    icon: 'building'
-                });
+                try {
+                    await window.supabase
+                        .from('notifications')
+                        .insert([{
+                            user_id: currentUser.id,
+                            type: 'business',
+                            title: 'Business Created',
+                            message: `🎉 You successfully created "${businessData.name}"`,
+                            icon: 'building',
+                            read: false,
+                            created_at: new Date().toISOString()
+                        }]);
+                } catch (notifError) {
+                    console.log('Notification creation failed:', notifError);
+                }
                 
-                Toast.show('Business created successfully!', 'success');
+                window.Toast?.show('Business created successfully!', 'success');
                 
                 return newBusiness;
             } catch (error) {
                 console.error('Error adding business:', error);
-                Toast.show(error.message, 'error');
+                window.Toast?.show(error.message || 'Error creating business', 'error');
             }
         };
 
@@ -282,27 +447,47 @@
             
             try {
                 const { id, ...data } = businessData;
-                await db.collection('businesses').doc(id).update({
-                    ...data,
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
+                
+                const updateData = {
+                    name: data.name,
+                    category: data.category,
+                    location: data.location,
+                    address: data.address,
+                    phone: data.phone,
+                    email: data.email,
+                    whatsapp: data.whatsapp,
+                    description: data.description,
+                    hours: data.hours,
+                    price_range: data.priceRange,
+                    status: data.status,
+                    images: data.images,
+                    cover_image: data.coverImage,
+                    logo: data.logo,
+                    updated_at: new Date().toISOString()
+                };
+
+                const { error } = await window.supabase
+                    .from('businesses')
+                    .update(updateData)
+                    .eq('id', id);
+                
+                if (error) throw error;
 
                 setBusinesses(prev => prev.map(b => b.id === id ? { ...b, ...data } : b));
                 setAllBusinesses(prev => prev.map(b => b.id === id ? { ...b, ...data } : b));
 
                 await createNotification({
-                    userId: user.uid,
+                    user_id: user.id,
                     type: 'business',
                     title: 'Business Updated',
                     message: `✏️ You updated "${businessData.name}"`,
-                    link: `/business/${id}`,
                     icon: 'edit'
                 });
 
-                Toast.show('Business updated successfully!', 'success');
+                window.Toast?.show('Business updated successfully!', 'success');
             } catch (error) {
                 console.error('Error updating business:', error);
-                Toast.show(error.message, 'error');
+                window.Toast?.show(error.message, 'error');
             }
         };
 
@@ -314,32 +499,41 @@
             
             try {
                 const business = businesses.find(b => b.id === id);
-                await db.collection('businesses').doc(id).delete();
+                
+                const { error } = await window.supabase
+                    .from('businesses')
+                    .delete()
+                    .eq('id', id);
+                
+                if (error) throw error;
                 
                 setBusinesses(prev => prev.filter(b => b.id !== id));
                 setAllBusinesses(prev => prev.filter(b => b.id !== id));
                 
                 await createNotification({
-                    userId: user.uid,
+                    user_id: user.id,
                     type: 'business',
                     title: 'Business Deleted',
                     message: `🗑️ You deleted "${business?.name}"`,
                     icon: 'trash'
                 });
                 
-                Toast.show('Business deleted', 'warning');
+                window.Toast?.show('Business deleted', 'warning');
             } catch (error) {
                 console.error('Error deleting business:', error);
-                Toast.show(error.message, 'error');
+                window.Toast?.show(error.message, 'error');
             }
         };
 
         const handleMarkNotificationAsRead = async (notificationId) => {
             try {
-                await db.collection('notifications').doc(notificationId).update({
-                    read: true,
-                    readAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
+                await window.supabase
+                    .from('notifications')
+                    .update({ 
+                        read: true,
+                        read_at: new Date().toISOString()
+                    })
+                    .eq('id', notificationId);
             } catch (error) {
                 console.error('Error marking notification as read:', error);
             }
@@ -347,17 +541,16 @@
 
         const handleMarkAllNotificationsAsRead = async () => {
             try {
-                const batch = db.batch();
-                notifications.forEach(notif => {
-                    if (!notif.read) {
-                        batch.update(db.collection('notifications').doc(notif.id), {
-                            read: true,
-                            readAt: firebase.firestore.FieldValue.serverTimestamp()
-                        });
-                    }
-                });
-                await batch.commit();
-                Toast.show('All notifications marked as read');
+                await window.supabase
+                    .from('notifications')
+                    .update({ 
+                        read: true,
+                        read_at: new Date().toISOString()
+                    })
+                    .eq('user_id', user.id)
+                    .eq('read', false);
+                
+                window.Toast?.show('All notifications marked as read');
             } catch (error) {
                 console.error('Error marking all as read:', error);
             }
@@ -370,76 +563,95 @@
 
         const handleLogout = async () => {
             try {
-                await auth.signOut();
+                await window.supabase.auth.signOut();
                 setUser(null);
                 setUserData(null);
                 setBusinesses([]);
                 setActivePage('home');
-                Toast.show('Logged out successfully', 'success');
+                window.Toast?.show('Logged out successfully', 'success');
             } catch (error) {
                 console.error('Error logging out:', error);
-                Toast.show(error.message, 'error');
+                window.Toast?.show(error.message, 'error');
             }
         };
 
         const handleUpdateProfile = async (profileData) => {
             try {
-                await db.collection('users').doc(user.uid).update({
-                    ...profileData,
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
+                const { error } = await window.supabase
+                    .from('users')
+                    .update({
+                        name: profileData.name,
+                        company_name: profileData.companyName,
+                        phone: profileData.phone,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', user.id);
                 
-                setUserData(prev => ({ ...prev, ...profileData }));
+                if (error) throw error;
                 
-                if (profileData.name && user.displayName !== profileData.name) {
-                    await user.updateProfile({
-                        displayName: profileData.name
-                    });
-                }
+                setUserData(prev => ({ 
+                    ...prev, 
+                    name: profileData.name,
+                    company_name: profileData.companyName,
+                    phone: profileData.phone
+                }));
                 
                 await createNotification({
-                    userId: user.uid,
+                    user_id: user.id,
                     type: 'profile',
                     title: 'Profile Updated',
                     message: `👤 Your profile was updated successfully`,
                     icon: 'user'
                 });
                 
-                Toast.show('Profile updated successfully', 'success');
+                window.Toast?.show('Profile updated successfully', 'success');
             } catch (error) {
                 console.error('Error updating profile:', error);
-                Toast.show(error.message, 'error');
+                window.Toast?.show(error.message, 'error');
             }
         };
 
+        // Show loading while checking Supabase
+        if (!supabaseReady) {
+            return React.createElement(
+                'div',
+                { className: "min-h-screen flex items-center justify-center" },
+                React.createElement(
+                    'div',
+                    { className: "text-center" },
+                    React.createElement('div', { className: "spinner mx-auto mb-4" }),
+                    React.createElement('p', { className: "text-gray-600" }, "Connecting to database...")
+                )
+            );
+        }
+
         if (loading) {
-            return React.createElement(LoadingSpinner, { fullPage: true });
+            return React.createElement(window.LoadingSpinner, { fullPage: true });
         }
 
         const renderPage = () => {
             switch(activePage) {
                 case 'home':
-                    return React.createElement(LandingPage, {
+                    return React.createElement(window.LandingPage, {
                         onExplore: () => setActivePage('directory'),
                         allBusinesses
                     });
                 case 'directory':
-                    return React.createElement(DirectoryPage, {
+                    return React.createElement(window.DirectoryPage, {
                         businesses: allBusinesses,
                         onSelectBusiness: handleViewProfile
                     });
                 case 'profile':
-                    return React.createElement(ProfilePage, {
+                    return React.createElement(window.ProfilePage, {
                         business: selectedBusiness,
                         onBack: () => setActivePage('directory'),
                         currentUser: user,
                         userData,
-                        baseUrl: BASE_URL,
-                        onCreateNotification: createNotification
+                        baseUrl: BASE_URL
                     });
                 case 'dashboard':
-                    return React.createElement(ProtectedRoute, { user },
-                        React.createElement(Dashboard, {
+                    return React.createElement(window.ProtectedRoute, { user },
+                        React.createElement(window.Dashboard, {
                             businesses,
                             onNavigate: (page, business) => {
                                 if (business) {
@@ -453,8 +665,9 @@
                         })
                     );
                 case 'sub-businesses':
-                    return React.createElement(ProtectedRoute, { user },
-                        React.createElement(SubBusinesses, {
+                    return React.createElement(window.ProtectedRoute, { user },
+                        React.createElement(window.SubBusinesses, {
+                            key: businesses.length,
                             businesses,
                             onAddBusiness: handleAddBusiness,
                             onEditBusiness: handleEditBusiness,
@@ -463,14 +676,22 @@
                         })
                     );
                 case 'analytics':
-                    return React.createElement(ProtectedRoute, { user },
-                        React.createElement(Analytics, {
+                    return React.createElement(window.ProtectedRoute, { user },
+                        React.createElement(window.Analytics, {
                             businesses
                         })
                     );
+                case 'media':
+                    return React.createElement(window.ProtectedRoute, { user },
+                        React.createElement(window.MediaLibrary, null)
+                    );
+                case 'qr-manager':
+                    return React.createElement(window.ProtectedRoute, { user },
+                        React.createElement(window.QRManager, null)
+                    );
                 case 'settings':
-                    return React.createElement(ProtectedRoute, { user },
-                        React.createElement(Settings, {
+                    return React.createElement(window.ProtectedRoute, { user },
+                        React.createElement(window.Settings, {
                             user,
                             userData,
                             onUpdateProfile: handleUpdateProfile,
@@ -478,9 +699,9 @@
                         })
                     );
                 case 'help':
-                    return React.createElement(Help);
+                    return React.createElement(window.Help);
                 default:
-                    return React.createElement(LandingPage, {
+                    return React.createElement(window.LandingPage, {
                         onExplore: () => setActivePage('directory'),
                         allBusinesses
                     });
@@ -490,7 +711,7 @@
         return React.createElement(
             'div',
             { className: "min-h-screen bg-gray-50" },
-            React.createElement(Navbar, {
+            React.createElement(window.Navbar, {
                 activePage,
                 setActivePage,
                 setSelectedBusiness,
@@ -519,7 +740,7 @@
                 { className: "pt-16" },
                 renderPage()
             ),
-            React.createElement(AuthModal, {
+            React.createElement(window.AuthModal, {
                 isOpen: showAuthModal,
                 onClose: () => setShowAuthModal(false),
                 onSuccess: () => {
@@ -530,8 +751,11 @@
         );
     };
 
-    window.App = App;
-
-    const root = ReactDOM.createRoot(document.getElementById('app'));
-    root.render(React.createElement(App));
+    const rootElement = document.getElementById('app');
+    if (rootElement) {
+        const root = ReactDOM.createRoot(rootElement);
+        root.render(React.createElement(App));
+    } else {
+        console.error('❌ App root element not found');
+    }
 })();
